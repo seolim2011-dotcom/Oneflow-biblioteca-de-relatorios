@@ -39,7 +39,7 @@ Escolha **um** dos caminhos:
 2. Copie o `config.sample.php` com o nome `config.php`.
 3. Edite o `config.php` e preencha `db_name`, `db_user` e `db_pass` com os dados do passo 1. Na Hostinger, o `db_host` é `localhost`.
 
-O `config.php` tem a senha do banco: ele fica **só no servidor** e não vai para o GitHub.
+O `config.php` tem a senha do banco: ele fica **só no servidor** e não vai para o GitHub. No primeiro acesso ao site, ele é movido sozinho para a pasta `roteiros-dados`, ao lado do `public_html`, fora da parte pública. Os PDFs enviados também ficam lá, em `roteiros-dados/pdfs`. Assim, atualizar o site pelo Git nunca apaga a configuração nem os PDFs. Para trocar a senha do banco, envie um novo `api/config.php`: ele substitui o anterior no próximo acesso.
 
 ### 4. Instalar
 

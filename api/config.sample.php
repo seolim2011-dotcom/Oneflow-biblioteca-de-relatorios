@@ -9,8 +9,9 @@ return [
     'db_user' => 'u000000000_roteiros',
     'db_pass' => 'SENHA_DO_BANCO',
 
-    // Pasta onde os PDFs ficam guardados. O padrão é a pasta "storage/pdfs" do site,
-    // que já vem bloqueada para acesso direto. Se quiser, aponte para uma pasta fora
-    // do public_html, por exemplo: __DIR__ . '/../../storage-roteiros'
-    'storage_dir' => __DIR__ . '/../storage/pdfs',
+    // No primeiro acesso, este arquivo é movido sozinho para a pasta "roteiros-dados",
+    // ao lado do public_html (fora da parte pública do site). Os PDFs também ficam lá,
+    // em "roteiros-dados/pdfs", e não são apagados quando o site é atualizado.
+    // Só preencha storage_dir se quiser guardar os PDFs em outro lugar.
+    // 'storage_dir' => '/home/usuario/caminho/para/pdfs',
 ];

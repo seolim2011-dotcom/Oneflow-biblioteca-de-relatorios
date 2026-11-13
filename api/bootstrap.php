@@ -5,7 +5,27 @@ declare(strict_types=1);
 const MAX_PDF_BYTES = 20 * 1024 * 1024;
 const MIN_SENHA = 8;
 
-$CONFIG = is_file(__DIR__ . '/config.php') ? require __DIR__ . '/config.php' : null;
+// Pasta de dados FORA da pasta pública (ao lado do public_html): guarda o config.php
+// e os PDFs, e não é apagada quando um deploy substitui os arquivos do site.
+function data_dir(): ?string
+{
+    static $dir = false;
+    if ($dir !== false) return $dir;
+    $d = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'roteiros-dados';
+    if (!is_dir($d)) @mkdir($d, 0750, true);
+    $dir = is_dir($d) && is_writable($d) ? $d : null;
+    return $dir;
+}
+
+// Um api/config.php recém-enviado é movido para a pasta de dados (e substitui o anterior)
+$__inner = __DIR__ . '/config.php';
+$__outer = data_dir() ? data_dir() . DIRECTORY_SEPARATOR . 'config.php' : null;
+if ($__outer && is_file($__inner) && @copy($__inner, $__outer)) {
+    @chmod($__outer, 0600);
+    @unlink($__inner);
+}
+$CONFIG = $__outer && is_file($__outer) ? require $__outer : (is_file($__inner) ? require $__inner : null);
+unset($__inner, $__outer);
 
 function cfg(string $key, $default = null)
 {
@@ -33,7 +53,8 @@ function db(): PDO
 
 function storage_dir(): string
 {
-    $dir = rtrim((string) cfg('storage_dir', __DIR__ . '/../storage/pdfs'), '/\\');
+    $padrao = data_dir() ? data_dir() . DIRECTORY_SEPARATOR . 'pdfs' : __DIR__ . '/../storage/pdfs';
+    $dir = rtrim((string) (cfg('storage_dir') ?: $padrao), '/\\');
     if (!is_dir($dir)) @mkdir($dir, 0755, true);
     return $dir;
 }
