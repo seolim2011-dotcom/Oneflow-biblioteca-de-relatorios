@@ -49,6 +49,23 @@
   </div>
 </div>
 
+<!-- Convite por link -->
+<div class="login" id="convite" hidden>
+  <div class="login-card">
+    <div class="brand"><span class="eyebrow">Convite</span><h1>Roteiros células One Flow</h1></div>
+    <p id="cv-text">Carregando o convite…</p>
+    <form id="cv-form" novalidate hidden>
+      <div class="field"><label for="cv-nome">Seu nome</label><input id="cv-nome" autocomplete="name" maxlength="120" required></div>
+      <div class="field"><label for="cv-email">E-mail</label><input id="cv-email" type="email" autocomplete="username" maxlength="190" required></div>
+      <div class="field"><label for="cv-pass">Crie uma senha <small>mínimo de 8 caracteres</small></label><input id="cv-pass" type="password" autocomplete="new-password" required></div>
+      <div class="field"><label for="cv-pass2">Repita a senha</label><input id="cv-pass2" type="password" autocomplete="new-password" required></div>
+      <div class="msg" id="cv-msg" role="alert"></div>
+      <button class="btn primary" id="cv-btn" type="submit">Criar minha conta</button>
+    </form>
+    <button class="linkbtn" id="cv-login" type="button">Já tenho conta: entrar</button>
+  </div>
+</div>
+
 <!-- Biblioteca -->
 <div class="wrap" id="app" hidden>
   <div class="topbar">

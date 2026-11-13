@@ -142,3 +142,21 @@ function text_cut(string $s, int $max): string
 {
     return function_exists('mb_substr') ? mb_substr($s, 0, $max, 'UTF-8') : substr($s, 0, $max);
 }
+
+// Cria a tabela de convites em bibliotecas instaladas antes dela existir
+function ensure_convites(): void
+{
+    static $ok = false;
+    if ($ok) return;
+    if (!db()->query("SHOW TABLES LIKE 'convites'")->fetch()) create_tables();
+    $ok = true;
+}
+
+function find_convite(string $token, bool $lock = false): ?array
+{
+    if (!preg_match('/^[a-f0-9]{64}$/', $token)) return null;
+    $st = db()->prepare('SELECT * FROM convites WHERE token_hash = ? AND revogado = 0 AND expira_em > NOW() AND (multiplo = 1 OR usos = 0)' . ($lock ? ' FOR UPDATE' : ''));
+    $st->execute([hash('sha256', $token)]);
+    $c = $st->fetch();
+    return $c ?: null;
+}

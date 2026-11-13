@@ -36,3 +36,16 @@ CREATE TABLE IF NOT EXISTS tentativas_login (
   INDEX idx_ip (ip, criado_em),
   INDEX idx_email (email, criado_em)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Links de convite: guardamos só o hash do código; o link aparece uma vez para o admin
+CREATE TABLE IF NOT EXISTS convites (
+  id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  token_hash  CHAR(64)     NOT NULL UNIQUE,
+  is_admin    TINYINT(1)   NOT NULL DEFAULT 0,
+  multiplo    TINYINT(1)   NOT NULL DEFAULT 0,
+  usos        INT UNSIGNED NOT NULL DEFAULT 0,
+  criado_por  INT UNSIGNED NULL,
+  criado_em   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  expira_em   DATETIME     NOT NULL,
+  revogado    TINYINT(1)   NOT NULL DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

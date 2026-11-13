@@ -352,6 +352,90 @@ switch ($action) {
         db()->prepare('DELETE FROM usuarios WHERE id = ?')->execute([$id]);
         out(['ok' => true]);
 
+    case 'convites':
+        require_admin();
+        ensure_convites();
+        $rows = db()->query('SELECT c.id, c.is_admin, c.multiplo, c.usos, c.criado_em, c.expira_em, u.nome, u.email
+            FROM convites c LEFT JOIN usuarios u ON u.id = c.criado_por
+            WHERE c.revogado = 0 AND c.expira_em > NOW() AND (c.multiplo = 1 OR c.usos = 0)
+            ORDER BY c.criado_em DESC')->fetchAll();
+        out(['convites' => array_map(fn($c) => [
+            'id' => (int) $c['id'],
+            'is_admin' => (bool) $c['is_admin'],
+            'multiplo' => (bool) $c['multiplo'],
+            'usos' => (int) $c['usos'],
+            'criado_em' => iso_date($c['criado_em']),
+            'expira_em' => iso_date($c['expira_em']),
+            'criado_por' => $c['nome'] ?: ($c['email'] ?: ''),
+        ], $rows)]);
+
+    case 'convite_criar':
+        if ($method !== 'POST') fail('Método inválido.', 405);
+        $eu = require_admin();
+        ensure_convites();
+        $admin = !empty(body()['is_admin']) ? 1 : 0;
+        $dias = (int) (body()['dias'] ?? 7);
+        if (!in_array($dias, [1, 7, 30], true)) $dias = 7;
+        $multiplo = !$admin && !empty(body()['multiplo']) ? 1 : 0; // link de admin vale para uma pessoa só
+        $token = bin2hex(random_bytes(32));
+        db()->prepare('INSERT INTO convites (token_hash, is_admin, multiplo, criado_por, expira_em) VALUES (?, ?, ?, ?, NOW() + INTERVAL ? DAY)')
+            ->execute([hash('sha256', $token), $admin, $multiplo, $eu['id'], $dias]);
+        $st = db()->prepare('SELECT expira_em FROM convites WHERE id = ?');
+        $st->execute([(int) db()->lastInsertId()]);
+        out(['token' => $token, 'is_admin' => (bool) $admin, 'multiplo' => (bool) $multiplo, 'expira_em' => iso_date((string) $st->fetchColumn())]);
+
+    case 'convite_revogar':
+        if ($method !== 'POST') fail('Método inválido.', 405);
+        require_admin();
+        ensure_convites();
+        db()->prepare('UPDATE convites SET revogado = 1 WHERE id = ?')->execute([(int) (body()['id'] ?? 0)]);
+        out(['ok' => true]);
+
+    case 'convite_info':
+        ensure_convites();
+        $c = find_convite((string) ($_GET['token'] ?? ''));
+        if (!$c) fail('Este link de convite não vale mais. Peça um novo link a um administrador.', 410);
+        out(['is_admin' => (bool) $c['is_admin'], 'expira_em' => iso_date($c['expira_em'])]);
+
+    case 'convite_aceitar':
+        if ($method !== 'POST') fail('Método inválido.', 405);
+        ensure_convites();
+        if (current_user()) fail('Você já está conectado. Saia da biblioteca para usar este convite.', 409);
+        $token = str_in('token', 64);
+        $email = strtolower(str_in('email', 190));
+        $nome = str_in('nome', 120);
+        $senha = (string) (body()['senha'] ?? '');
+        if ($nome === '') fail('Digite seu nome.', 422);
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) fail('Digite um e-mail válido.', 422);
+        if (text_len($senha) < MIN_SENHA) fail('Use pelo menos ' . MIN_SENHA . ' caracteres na senha.', 422);
+        $pdo = db();
+        $pdo->beginTransaction();
+        try {
+            $c = find_convite($token, true);
+            if (!$c) {
+                $pdo->rollBack();
+                fail('Este link de convite não vale mais. Peça um novo link a um administrador.', 410);
+            }
+            $st = $pdo->prepare('SELECT id FROM usuarios WHERE email = ?');
+            $st->execute([$email]);
+            if ($st->fetch()) {
+                $pdo->rollBack();
+                fail('Já existe uma conta com este e-mail. Use “Já tenho conta” para entrar.', 409);
+            }
+            $pdo->prepare('INSERT INTO usuarios (email, nome, senha_hash, is_admin, trocar_senha) VALUES (?, ?, ?, ?, 0)')
+                ->execute([$email, $nome, password_hash($senha, PASSWORD_DEFAULT), (int) $c['is_admin']]);
+            $uid = (int) $pdo->lastInsertId();
+            $pdo->prepare('UPDATE convites SET usos = usos + 1 WHERE id = ?')->execute([$c['id']]);
+            $pdo->commit();
+        } catch (PDOException $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            fail('Não foi possível criar sua conta agora. Tente de novo.', 500);
+        }
+        session_regenerate_id(true);
+        $_SESSION['uid'] = $uid;
+        $_SESSION['csrf'] = bin2hex(random_bytes(32));
+        out(['usuario' => current_user(), 'csrf' => $_SESSION['csrf']]);
+
     default:
         fail('Ação desconhecida.', 404);
 }

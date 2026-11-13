@@ -85,7 +85,7 @@
   };
 
   // ---------- Telas e login ----------
-  function show(screen) { ["setup", "login", "newpass", "app"].forEach(id => { $(id).hidden = id !== screen; }); }
+  function show(screen) { ["setup", "login", "newpass", "convite", "app"].forEach(id => { $(id).hidden = id !== screen; }); }
 
   function onUser(u) {
     me = u;
@@ -105,6 +105,12 @@
     try {
       const s = await api("sessao");
       csrf = s.csrf || "";
+      const cv = location.hash.match(/^#convite=([a-f0-9]{64})$/);
+      if (cv && !s.usuario) { openInvite(cv[1]); return; }
+      if (cv) {
+        clearInviteHash();
+        setTimeout(() => toast("Você já está conectado. Para usar o convite, saia e abra o link de novo."), 400);
+      }
       onUser(s.usuario || null);
     } catch (e) {
       $("setup-msg").textContent = e.erro || "Não foi possível abrir a biblioteca agora.";
@@ -161,6 +167,51 @@
     onUser(null); toast("Você saiu da biblioteca");
   });
   $("changepass").addEventListener("click", openPass);
+
+  // ---------- Aceitar convite ----------
+  let inviteToken = null;
+  async function openInvite(token) {
+    inviteToken = token;
+    show("convite");
+    $("cv-form").hidden = true;
+    $("cv-text").textContent = "Carregando o convite…";
+    try {
+      const c = await api("convite_info", { params: { token } });
+      $("cv-text").innerHTML = `Você foi convidado para a biblioteca como <strong>${c.is_admin ? "Administrador" : "Leitor"}</strong>. Crie sua conta para acessar os roteiros.`;
+      $("cv-form").hidden = false;
+      $("cv-nome").focus();
+    } catch (ex) {
+      $("cv-text").textContent = ex.erro;
+    }
+  }
+  function clearInviteHash() {
+    inviteToken = null;
+    try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
+  }
+  $("cv-login").addEventListener("click", () => { clearInviteHash(); show("login"); $("l-email").focus(); });
+  $("cv-form").addEventListener("submit", async e => {
+    e.preventDefault();
+    const msg = $("cv-msg"), btn = $("cv-btn");
+    const nome = $("cv-nome").value.trim(), email = $("cv-email").value.trim();
+    if (!nome) { msg.textContent = "Digite seu nome."; return; }
+    if (!email) { msg.textContent = "Digite seu e-mail."; return; }
+    const bad = checkNewPass($("cv-pass").value, $("cv-pass2").value);
+    if (bad) { msg.textContent = bad; return; }
+    msg.textContent = ""; btn.disabled = true; btn.textContent = "Criando sua conta…";
+    try {
+      const r = await api("convite_aceitar", { body: { token: inviteToken, nome, email, senha: $("cv-pass").value } });
+      csrf = r.csrf || csrf;
+      clearInviteHash();
+      $("cv-pass").value = ""; $("cv-pass2").value = "";
+      toast("Conta criada. Bem-vindo à biblioteca!");
+      onUser(r.usuario);
+    } catch (ex) {
+      msg.textContent = ex.erro;
+      if (ex.status === 419) boot();
+    } finally {
+      btn.disabled = false; btn.textContent = "Criar minha conta";
+    }
+  });
 
   // ---------- Conta e áreas ----------
   function renderAccount() {
@@ -708,10 +759,11 @@
         <p style="margin:0;color:var(--muted)">Leitores pesquisam, leem e baixam roteiros. Administradores também adicionam, editam e excluem roteiros e cadastram pessoas.</p>
         <div id="userform-wrap"></div>
         <div class="userlist" id="userlist"><div class="urow"><span class="who"><span>Carregando…</span></span></div></div>
+        <div><strong class="sectitle">Links de convite ativos</strong><div id="invites"><p class="dates" style="margin:0">Carregando…</p></div></div>
       </div>
-      <div class="dlg-foot"><span class="dates" id="usercount"></span><button class="btn primary" type="button" data-act="u-new">+ Adicionar usuário</button></div>`;
+      <div class="dlg-foot"><span class="dates" id="usercount"></span><span style="display:flex;flex-wrap:wrap;gap:8px"><button class="btn" type="button" data-act="inv-new">Convidar por link</button><button class="btn primary" type="button" data-act="u-new">+ Adicionar usuário</button></span></div>`;
     if (!dlg.open) dlg.showModal();
-    await loadUsers();
+    await Promise.all([loadUsers(), loadInvites()]);
   }
   async function loadUsers() {
     try {
@@ -798,6 +850,109 @@
       $("u-err").textContent = ex.erro; btn.disabled = false;
     }
   }
+  // ---------- Convites por link (admin) ----------
+  let invites = [], invArmTimer = null;
+  async function loadInvites() {
+    try {
+      invites = (await api("convites")).convites || [];
+    } catch (ex) {
+      const box = $("invites");
+      if (box) box.innerHTML = `<p class="dates" style="margin:0">${esc(ex.erro)}</p>`;
+      return;
+    }
+    renderInvites();
+  }
+  function renderInvites() {
+    const box = $("invites"); if (!box) return;
+    if (!invites.length) {
+      box.innerHTML = `<p class="dates" style="margin:0">Nenhum link ativo. Use “Convidar por link” para criar um.</p>`;
+      return;
+    }
+    box.innerHTML = `<div class="userlist">${invites.map(c => `
+      <div class="urow">
+        <span class="who"><strong>${c.is_admin ? "Administrador" : "Leitor"} · ${c.multiplo ? "várias pessoas" : "uma pessoa"}</strong>
+          <span>Vale até ${esc(fmtDate(c.expira_em))}${c.multiplo ? ` · ${c.usos} ${c.usos === 1 ? "conta criada" : "contas criadas"}` : ""}${c.criado_por ? " · criado por " + esc(c.criado_por) : ""}</span></span>
+        <span class="badge${c.is_admin ? " admin" : ""}">${c.is_admin ? "Admin" : "Leitor"}</span>
+        <button class="btn sm danger" type="button" data-act="inv-revoke" data-iid="${c.id}">Desativar</button>
+      </div>`).join("")}</div>`;
+  }
+  function openInviteForm() {
+    editingUser = null;
+    const wrap = $("userform-wrap"); if (!wrap) return;
+    wrap.innerHTML = `
+      <form class="edit userform" id="invform" novalidate>
+        <strong>Novo link de convite</strong>
+        <p class="dates" style="margin:0">Quem abrir o link cria a própria conta, com nome, e-mail e senha.</p>
+        <fieldset class="opts"><legend>Entra como</legend>
+          <label class="check"><input type="radio" name="inv-role" value="0" checked> Leitor <small>pesquisa, lê e baixa os roteiros</small></label>
+          <label class="check"><input type="radio" name="inv-role" value="1"> Administrador <small>também adiciona, edita, exclui e cadastra pessoas</small></label>
+        </fieldset>
+        <fieldset class="opts"><legend>Quantas pessoas podem usar</legend>
+          <label class="check"><input type="radio" name="inv-uso" value="0" checked> Uma pessoa</label>
+          <label class="check" id="inv-multi-label"><input type="radio" name="inv-uso" value="1"> Várias pessoas <small id="inv-multi-note">bom para mandar no grupo da célula</small></label>
+        </fieldset>
+        <div class="field"><label for="inv-dias">Vale por</label>
+          <select id="inv-dias"><option value="1">1 dia</option><option value="7" selected>7 dias</option><option value="30">30 dias</option></select></div>
+        <div class="err" id="inv-err" role="alert"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" type="button" data-act="u-cancel">Cancelar</button><button class="btn primary" type="submit" id="inv-save">Criar link</button></div>
+      </form>`;
+  }
+  function syncInviteForm() {
+    const admin = document.querySelector('input[name="inv-role"]:checked')?.value === "1";
+    const multi = document.querySelector('input[name="inv-uso"][value="1"]');
+    if (!multi) return;
+    multi.disabled = admin;
+    if (admin) document.querySelector('input[name="inv-uso"][value="0"]').checked = true;
+    $("inv-multi-note").textContent = admin ? "links de administrador valem para uma pessoa só" : "bom para mandar no grupo da célula";
+  }
+  async function createInvite(e) {
+    e.preventDefault();
+    const btn = $("inv-save"); btn.disabled = true;
+    const body = {
+      is_admin: document.querySelector('input[name="inv-role"]:checked')?.value === "1",
+      multiplo: document.querySelector('input[name="inv-uso"]:checked')?.value === "1",
+      dias: +$("inv-dias").value
+    };
+    try {
+      const r = await api("convite_criar", { body });
+      const link = `${location.origin}${location.pathname}#convite=${r.token}`;
+      const papel = r.is_admin ? "Administrador" : "Leitor";
+      const texto = `Você foi convidado para a biblioteca de roteiros das células One Flow como ${papel}. Crie sua conta neste link: ${link}`;
+      $("userform-wrap").innerHTML = `
+        <div class="userform invite-done">
+          <strong>Link criado: entra como ${papel} · ${r.multiplo ? "várias pessoas" : "uma pessoa"} · vale até ${esc(fmtDate(r.expira_em))}</strong>
+          <div style="display:flex;gap:8px"><input id="inv-link" class="invlink" readonly value="${esc(link)}" aria-label="Link de convite"><button class="btn sm primary" type="button" data-act="inv-copy">Copiar</button></div>
+          <p class="dates" style="margin:0">Este link aparece só agora. Copie e envie para ${r.multiplo ? "as pessoas" : "a pessoa"}. Se perder, crie outro.</p>
+          <div style="display:flex;flex-wrap:wrap;gap:8px"><a class="btn sm" href="https://wa.me/?text=${encodeURIComponent(texto)}" target="_blank" rel="noopener">Enviar pelo WhatsApp</a><button class="btn sm" type="button" data-act="u-cancel">Fechar</button></div>
+        </div>`;
+      $("inv-link").select();
+      await loadInvites();
+    } catch (ex) {
+      $("inv-err").textContent = ex.erro; btn.disabled = false;
+    }
+  }
+  async function copyInvite(btn) {
+    const input = $("inv-link"); if (!input) return;
+    try { await navigator.clipboard.writeText(input.value); btn.textContent = "Copiado"; toast("Link copiado"); }
+    catch (e) { input.select(); toast("Selecione e copie o link com Ctrl+C"); }
+  }
+  async function revokeInvite(btn) {
+    if (!btn.classList.contains("armed")) {
+      btn.classList.add("armed"); btn.textContent = "Confirmar";
+      clearTimeout(invArmTimer); invArmTimer = setTimeout(() => { btn.classList.remove("armed"); btn.textContent = "Desativar"; }, 4000);
+      return;
+    }
+    btn.disabled = true;
+    try {
+      await api("convite_revogar", { body: { id: +btn.dataset.iid } });
+      toast("Link desativado");
+      await loadInvites();
+    } catch (ex) {
+      btn.disabled = false; toast(ex.erro);
+    }
+  }
+  document.addEventListener("change", e => { if (e.target.name === "inv-role") syncInviteForm(); });
+
   const genPass = () => {
     const abc = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789", a = new Uint32Array(10);
     crypto.getRandomValues(a);
@@ -907,11 +1062,15 @@
     else if (act === "u-cancel") { $("userform-wrap").innerHTML = ""; editingUser = null; }
     else if (act === "u-del") delUser(actEl);
     else if (act === "u-gen") { const i = $("u-senha"); if (i) { i.value = genPass(); i.select(); } }
+    else if (act === "inv-new") openInviteForm();
+    else if (act === "inv-copy") copyInvite(actEl);
+    else if (act === "inv-revoke") revokeInvite(actEl);
   });
   document.addEventListener("submit", e => {
     if (e.target.id === "form") save(e);
     else if (e.target.id === "passform") savePass(e);
     else if (e.target.id === "userform") saveUser(e);
+    else if (e.target.id === "invform") createInvite(e);
   });
   $("new").addEventListener("click", () => { if (canWriteNow()) openEdit(null); });
   qEl.addEventListener("input", render);
