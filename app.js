@@ -61,7 +61,7 @@
   // ---------- Estado ----------
   let me = null, started = false, isAdmin = false, area = "usuario", readOnly = false;
   let items = [], loaded = false, loadNote = "", lastLoad = 0, firstHash = true;
-  let testament = "", sortBy = "recentes", mode = "busca", selTags = new Set(), tagSort = "az";
+  let testament = "", sortBy = "recentes", mode = "busca", selTags = new Set(), tagsOpen = false;
   try { sortBy = localStorage.getItem("bib-sort") || "recentes"; } catch (e) {}
   const canWriteNow = () => isAdmin && area === "admin" && !readOnly;
 
@@ -364,31 +364,28 @@
     const tc = $("tagcount");
     tc.textContent = counts.size; tc.hidden = !counts.size;
     $("selected").innerHTML = selTags.size
-      ? `<span class="sel-label">Roteiros com:</span>` +
-        [...selTags].map(t => `<button type="button" class="tag on" data-tag="${esc(t)}" aria-label="Remover tema ${esc(t)}">#${esc(t)} ×</button>`).join("") +
-        `<button type="button" class="linkbtn" data-act="cleartags">Limpar temas</button>`
-      : `<span class="sel-label">Escolha um ou mais temas para ver os roteiros. Com mais de um, aparecem só os que têm todos.</span>`;
+      ? `${selTags.size === 1 ? "Mostrando o tema" : "Mostrando roteiros com todos os temas"} ${[...selTags].map(t => "<strong>#" + esc(t) + "</strong>").join(" ")} · <button type="button" class="linkbtn" data-act="cleartags">limpar</button>`
+      : "Toque em um tema para filtrar os roteiros.";
     const tq = norm($("tq").value.trim().replace(/^#+/, ""));
-    const list = [...counts.entries()].filter(([t]) => !tq || norm(t).includes(tq));
+    const list = [...counts.entries()].filter(([t]) => !tq || norm(t).includes(tq) || selTags.has(t));
+    const more = $("tagmore");
     if (!list.length) {
-      tagIndex.innerHTML = `<p class="muted">${counts.size ? "Nenhum tema com esse nome." : "Os temas aparecem aqui assim que os roteiros tiverem tags."}</p>`;
+      tagIndex.innerHTML = `<span class="tagempty">${counts.size ? "Nenhum tema com esse nome." : "Os temas aparecem aqui assim que os roteiros tiverem tags."}</span>`;
+      more.hidden = true;
       return;
     }
-    const chip = ([t, n]) => `<button type="button" class="tag${selTags.has(t) ? " on" : ""}" data-tag="${esc(t)}" aria-pressed="${selTags.has(t)}">#${esc(t)} <span class="n">${n}</span></button>`;
-    if (tagSort === "uso") {
-      list.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "pt-BR"));
-      tagIndex.innerHTML = `<div class="tags">${list.map(chip).join("")}</div>`;
-      return;
-    }
-    list.sort((a, b) => a[0].localeCompare(b[0], "pt-BR"));
-    const groups = new Map();
-    list.forEach(e => {
-      const c = (norm(e[0])[0] || "").toUpperCase();
-      const L = /[A-Z]/.test(c) ? c : "0–9";
-      if (!groups.has(L)) groups.set(L, []);
-      groups.get(L).push(e);
-    });
-    tagIndex.innerHTML = [...groups].map(([L, es]) => `<div class="letter"><span class="L">${L}</span><div class="tags">${es.map(chip).join("")}</div></div>`).join("");
+    // Selecionados primeiro, depois os mais usados
+    list.sort((a, b) => (selTags.has(b[0]) - selTags.has(a[0])) || b[1] - a[1] || a[0].localeCompare(b[0], "pt-BR"));
+    tagIndex.innerHTML = list.map(([t, n]) => `<button type="button" class="tag${selTags.has(t) ? " on" : ""}" data-tag="${esc(t)}" aria-pressed="${selTags.has(t)}">#${esc(t)}<span class="n">${n}</span></button>`).join("");
+    // Recolhido em duas linhas, com "ver todos" quando não couber
+    tagIndex.classList.toggle("open", tagsOpen || !!tq);
+    const sobra = tagIndex.scrollHeight > tagIndex.clientHeight + 2;
+    if (tagsOpen && !tq) { more.hidden = false; more.textContent = "mostrar menos"; }
+    else if (sobra) {
+      const limite = tagIndex.getBoundingClientRect().bottom;
+      const escondidos = [...tagIndex.children].filter(c => c.getBoundingClientRect().top >= limite - 1).length;
+      more.hidden = false; more.textContent = `ver todos os ${list.length} temas (+${escondidos})`;
+    } else more.hidden = true;
   }
 
   function setMode(m) {
@@ -1159,11 +1156,10 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
     if (e.key === "ArrowRight" || e.key === "ArrowLeft") { e.preventDefault(); const m = mode === "busca" ? "temas" : "busca"; setMode(m); $("tab-" + m).focus(); }
   });
   $("tq").addEventListener("input", render);
-  document.querySelectorAll("[data-ts]").forEach(b => b.addEventListener("click", () => {
-    tagSort = b.dataset.ts;
-    document.querySelectorAll("[data-ts]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+  $("tagmore").addEventListener("click", () => {
+    tagsOpen = !tagsOpen;
     render();
-  }));
+  });
   document.addEventListener("keydown", e => {
     if (e.key === "/" && !dlg.open && !$("app").hidden && document.activeElement !== qEl && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) { e.preventDefault(); qEl.focus(); }
   });
