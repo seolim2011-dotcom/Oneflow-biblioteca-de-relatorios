@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Roteiros células One Flow</title>
+<meta name="description" content="Biblioteca de roteiros de estudo bíblico das células One Flow.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Aviso de configuração (aparece só enquanto o config.js não foi preenchido) -->
+<div class="login" id="setup" hidden>
+  <div class="login-card">
+    <div class="brand"><span class="eyebrow">Workflow</span><h1>Roteiros células One Flow</h1></div>
+    <p>O site ainda não está ligado ao banco de dados. Preencha a <code>supabaseUrl</code> e a <code>supabaseAnonKey</code> no arquivo <code>config.js</code>, seguindo o passo a passo do <code>README.md</code>.</p>
+  </div>
+</div>
+
+<!-- Login -->
+<div class="login" id="login" hidden>
+  <div class="login-card">
+    <div class="brand"><span class="eyebrow">Workflow</span><h1>Roteiros células One Flow</h1></div>
+    <p>Entre com o e-mail e a senha que o administrador cadastrou para você.</p>
+    <form id="login-form" novalidate>
+      <div class="field"><label for="l-email">E-mail</label><input id="l-email" type="email" autocomplete="username" required></div>
+      <div class="field"><label for="l-pass">Senha</label><input id="l-pass" type="password" autocomplete="current-password" required></div>
+      <div class="msg" id="login-msg" role="alert"></div>
+      <button class="btn primary" id="login-btn" type="submit">Entrar</button>
+    </form>
+    <button class="linkbtn" id="forgot" type="button">Esqueci minha senha</button>
+  </div>
+</div>
+
+<!-- Definir senha (convite ou recuperação) -->
+<div class="login" id="newpass" hidden>
+  <div class="login-card">
+    <div class="brand"><span class="eyebrow">Workflow</span><h1>Defina sua senha</h1></div>
+    <p>Crie a senha que você vai usar para entrar na biblioteca.</p>
+    <form id="np-form" novalidate>
+      <div class="field"><label for="np-pass">Nova senha <small>mínimo de 8 caracteres</small></label><input id="np-pass" type="password" autocomplete="new-password" required></div>
+      <div class="field"><label for="np-pass2">Repita a senha</label><input id="np-pass2" type="password" autocomplete="new-password" required></div>
+      <div class="msg" id="np-msg" role="alert"></div>
+      <button class="btn primary" id="np-btn" type="submit">Salvar senha e entrar</button>
+    </form>
+  </div>
+</div>
+
+<!-- Biblioteca -->
+<div class="wrap" id="app" hidden>
+  <div class="topbar">
+    <div class="account">
+      <span class="avatar-i" id="who-avatar" aria-hidden="true"></span>
+      <span class="who"><strong id="who-name"></strong><span class="role" id="who-role"></span></span>
+    </div>
+    <div class="top-right">
+      <span class="areainfo" id="areainfo" hidden>Área do usuário · leitura e download</span>
+      <div class="seg" id="areaseg" role="group" aria-label="Área" hidden>
+        <button type="button" data-area="usuario" aria-pressed="false">Área do usuário</button>
+        <button type="button" data-area="admin" aria-pressed="false">Área do admin</button>
+      </div>
+      <button class="linkbtn" id="changepass" type="button">Alterar senha</button>
+      <button class="linkbtn" id="logout" type="button">Sair</button>
+    </div>
+  </div>
+
+  <header>
+    <div class="brand">
+      <span class="eyebrow">Workflow</span>
+      <h1>Roteiros células One Flow</h1>
+      <span class="stats" id="stats">Carregando a biblioteca…</span>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px">
+      <button class="btn" id="import" type="button" hidden>Importar PDFs</button>
+      <button class="btn primary" id="new" type="button" hidden>+ Novo roteiro</button>
+    </div>
+    <input type="file" id="imp" accept="application/pdf,.pdf" multiple hidden>
+  </header>
+
+  <section class="search">
+    <div class="tabs" role="tablist" aria-label="Modo de pesquisa">
+      <button type="button" role="tab" id="tab-busca" aria-controls="panel-busca" aria-selected="true">Pesquisar por nome</button>
+      <button type="button" role="tab" id="tab-temas" aria-controls="panel-temas" aria-selected="false" tabindex="-1">Temas # <span class="n" id="tagcount" hidden></span></button>
+    </div>
+
+    <div class="panel" id="panel-busca" role="tabpanel" aria-labelledby="tab-busca">
+      <div class="searchbox">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="q" type="search" autocomplete="off" spellcheck="false" placeholder="Buscar por nome, passagem ou #tema" aria-label="Buscar roteiros">
+        <button id="clear" type="button" aria-label="Limpar busca" hidden>×</button>
+      </div>
+      <div class="hint">Digite um nome (<code>parábolas</code>) ou um livro (<code>Romanos</code>). Aqui também vale <code>#graça</code> e o número do roteiro (<code>#12</code>). Para navegar pelos temas, use a aba <strong>Temas #</strong>.</div>
+    </div>
+
+    <div class="panel" id="panel-temas" role="tabpanel" aria-labelledby="tab-temas" hidden>
+      <div class="tagtools">
+        <input id="tq" type="search" autocomplete="off" spellcheck="false" placeholder="Filtrar temas…" aria-label="Filtrar temas">
+        <div class="seg" role="group" aria-label="Ordem dos temas">
+          <button type="button" data-ts="az" aria-pressed="true">A–Z</button>
+          <button type="button" data-ts="uso" aria-pressed="false">Mais usados</button>
+        </div>
+      </div>
+      <div class="selected" id="selected"></div>
+      <div class="tagindex" id="tagindex"></div>
+    </div>
+  </section>
+
+  <div class="toolbar">
+    <span class="count" id="count"></span>
+    <div class="controls">
+      <div class="seg" role="group" aria-label="Testamento">
+        <button type="button" data-t="" aria-pressed="true">Todos</button>
+        <button type="button" data-t="AT" aria-pressed="false">Antigo</button>
+        <button type="button" data-t="NT" aria-pressed="false">Novo</button>
+      </div>
+      <select id="sort" aria-label="Ordenar">
+        <option value="recentes">Mais recentes</option>
+        <option value="biblica">Ordem bíblica</option>
+        <option value="nome">Nome (A–Z)</option>
+        <option value="numero">Número</option>
+      </select>
+    </div>
+  </div>
+
+  <main id="list" aria-live="polite"></main>
+</div>
+
+<dialog id="dlg" aria-label="Roteiro"><div class="dlg" id="dlg-inner"></div></dialog>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
