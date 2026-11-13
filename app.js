@@ -429,6 +429,68 @@
   const sig = it => JSON.stringify([it.numero, it.titulo, it.passagem, it.tags, it.resumo, it.roteiro, it.pdf, it.criadoEm, it.atualizadoEm]);
   const pagesTxt = n => n ? `${n} ${n === 1 ? "página" : "páginas"}` : "";
 
+  // Modelo do roteiro de célula One Flow: textos fixos de cada hora já vêm prontos,
+  // o que muda a cada semana fica entre colchetes para o admin substituir.
+  const MODELO_CELULA = `**Roteiro escrito por** [nome] **e revisado pela equipe Workflow da PIB Curitiba**
+
+## Flow News
+**[NOME DO EVENTO]** - [descrição, data e link de inscrição]
+
+**[NOME DO EVENTO]** - [descrição, data e link de inscrição]
+
+## Hora do Encontro
+Este é um momento mais descontraído para a célula se soltar, criando um ambiente de conforto e **comunhão**, para que cada um se sinta parte da célula.
+
+**Quebra-gelo:** [pergunta para a célula se soltar]
+
+**Líder:** caso haja alguém novo, apresente-o à célula.
+
+## Hora da Exaltação
+Este é o momento em que os membros são conduzidos à **adoração** a Deus, que pode ser feita de diferentes formas: em oração, celebração, recitando textos bíblicos ou poesias, louvores, entre outros.
+
+**Dica de exaltação:** [como conduzir a exaltação nesta semana]
+
+**Líder:** busque trazer diferentes formas de exaltar o Senhor!
+
+## Hora da Edificação
+Este é o momento para a célula **compartilhar** e refletir verdades simples da palavra de Deus, levando-a para o seu viver diário.
+
+**Líder:** lembre-se! Você não está ali para pregar. E sim, para conduzir a célula ao DIÁLOGO e reflexão! (Incentive os participantes a compartilharem e falarem ao longo da palavra).
+
+**[TÍTULO DO ESTUDO]**
+Texto - [livro capítulo:versículos]
+
+**Introdução**
+[texto da introdução]
+
+## 1. [Primeiro ponto]
+[texto do primeiro ponto]
+
+**Reflexão:** [pergunta para a célula]
+
+**Dica pro líder:** [textos de apoio e como conduzir]
+
+## 2. [Segundo ponto]
+[texto do segundo ponto]
+
+**Reflexão:** [pergunta para a célula]
+
+**Dica pro líder:** [textos de apoio e como conduzir]
+
+## 3. [Terceiro ponto]
+[texto do terceiro ponto]
+
+**Reflexão:** [pergunta para a célula]
+
+**Dica pro líder:** [textos de apoio e como conduzir]
+
+## Hora do Evangelismo
+Este é um momento para incentivar a célula a **anunciar** as boas novas ao mundo no cotidiano: intercedendo, fazendo boas ações, conversando sobre Jesus.
+
+**Desafio evangelístico:** [desafio da semana]
+
+**Líder:** lembre-se de pedir a cada semana que a célula compartilhe como cumpriu o desafio da última semana!`;
+
   function openRead(id) {
     const it = items.find(x => x.id === id);
     if (!it) return;
@@ -471,7 +533,9 @@
         </div>
         <div class="field"><label for="f-pdf">Roteiro pronto em PDF <small>opcional · até 20 MB · o texto do PDF entra na busca</small></label><div class="pdfbox" id="pdfbox"></div><input type="file" id="f-pdf" accept="application/pdf,.pdf" hidden></div>
         <div class="field"><label for="f-resumo">Resumo <small>uma ou duas frases</small></label><textarea id="f-resumo" rows="2" maxlength="400">${esc(it?.resumo)}</textarea></div>
-        <div class="field"><label for="f-roteiro">Roteiro <small>## título · - item · 1. pergunta · &gt; citação · **negrito**</small></label><textarea id="f-roteiro" placeholder="## Objetivo&#10;Entender…&#10;&#10;## Leitura&#10;> Versículo-chave&#10;&#10;## Perguntas&#10;1. …&#10;2. …&#10;&#10;## Aplicação&#10;- …">${esc(it?.roteiro)}</textarea></div>
+        <div class="field">
+          <div class="labelrow"><label for="f-roteiro">Roteiro <small>## título · - item · 1. pergunta · &gt; citação · **negrito** · troque o que está entre [colchetes]</small></label><button class="btn sm" type="button" data-act="use-template">Usar modelo da célula</button></div>
+          <textarea id="f-roteiro">${esc(it ? it.roteiro : MODELO_CELULA)}</textarea></div>
         <div class="err" id="f-err" role="alert"></div>
       </form>
       <div class="dlg-foot"><span></span><span style="display:flex;gap:8px"><button class="btn" type="button" data-act="${it ? "back" : "close"}">Cancelar</button><button class="btn primary" type="submit" form="form" id="f-save">Salvar roteiro</button></span></div>`;
@@ -499,7 +563,8 @@
     fd.append("passagem", $("f-passagem").value.trim());
     fd.append("tags", JSON.stringify(parseTags($("f-tags").value)));
     fd.append("resumo", $("f-resumo").value.trim());
-    fd.append("roteiro", $("f-roteiro").value.replace(/\s+$/, ""));
+    const texto = $("f-roteiro").value.replace(/\s+$/, "");
+    fd.append("roteiro", texto === MODELO_CELULA ? "" : texto); // modelo sem nenhuma mudança não é salvo
     if (pdfDraft.file) {
       fd.append("pdf", pdfDraft.file, pdfDraft.file.name);
       fd.append("pdf_paginas", pdfDraft.pages || "");
@@ -1062,6 +1127,16 @@
     else if (act === "u-cancel") { $("userform-wrap").innerHTML = ""; editingUser = null; }
     else if (act === "u-del") delUser(actEl);
     else if (act === "u-gen") { const i = $("u-senha"); if (i) { i.value = genPass(); i.select(); } }
+    else if (act === "use-template") {
+      const ta = $("f-roteiro");
+      if (ta && (!ta.value.trim() || actEl.classList.contains("armed"))) {
+        ta.value = MODELO_CELULA; ta.focus(); ta.setSelectionRange(0, 0); ta.scrollTop = 0;
+        actEl.classList.remove("armed"); actEl.textContent = "Usar modelo da célula";
+      } else if (ta) {
+        actEl.classList.add("armed"); actEl.textContent = "Substituir o texto atual?";
+        setTimeout(() => { if (actEl.isConnected) { actEl.classList.remove("armed"); actEl.textContent = "Usar modelo da célula"; } }, 4000);
+      }
+    }
     else if (act === "inv-new") openInviteForm();
     else if (act === "inv-copy") copyInvite(actEl);
     else if (act === "inv-revoke") revokeInvite(actEl);

@@ -247,3 +247,9 @@ fieldset.opts legend { font-size: 13px; font-weight: 600; padding: 0; margin-bot
 #inv-dias { width: auto; align-self: flex-start; padding: 8px 10px; font-size: 14px; }
 .invite-done { display: flex; flex-direction: column; gap: 12px; }
 .invlink { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: var(--surface); font-family: var(--font-ref); font-size: 12.5px; }
+
+/* Modelo da célula no editor */
+.labelrow { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 8px; }
+.labelrow label { flex: 1 1 260px; }
+.btn.sm.armed { background: var(--accent); color: var(--surface); border-color: var(--accent); }
+#f-roteiro { min-height: 420px; }
