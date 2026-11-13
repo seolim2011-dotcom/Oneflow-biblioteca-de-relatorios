@@ -47,7 +47,7 @@ O `config.php` tem a senha do banco: ele fica **só no servidor** e não vai par
 2. Crie a conta do primeiro administrador (seu nome, e-mail e senha).
 3. Pronto: as tabelas e 3 roteiros de exemplo são criados. **Apague o `instalar.php`** do servidor depois. Ele já se bloqueia sozinho, mas é melhor não deixar lá.
 
-Se a página avisar que a pasta de PDFs não pode ser gravada, dê permissão **755** à pasta `storage/pdfs` no Gerenciador de Arquivos.
+Se a página avisar que a pasta de PDFs não pode ser gravada, dê permissão **755** à pasta `roteiros-dados`, ao lado do `public_html`, no Gerenciador de Arquivos.
 
 ### 5. Ativar o HTTPS
 

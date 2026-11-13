@@ -77,7 +77,7 @@ if ($estado === 'form') {
 <?php elseif ($estado === 'pronto' || $estado === 'pronto_sem_pasta'): ?>
     <p>Pronto! As tabelas foram criadas, junto com 3 roteiros de exemplo, e você é o primeiro administrador.</p>
     <?php if ($estado === 'pronto_sem_pasta'): ?>
-    <p class="msg">Atenção: a pasta de PDFs não pode ser gravada. No Gerenciador de Arquivos, dê permissão 755 à pasta <code>storage/pdfs</code>.</p>
+    <p class="msg">Atenção: a pasta de PDFs não pode ser gravada. No Gerenciador de Arquivos, dê permissão 755 à pasta <code>roteiros-dados</code>, que fica ao lado do <code>public_html</code>.</p>
     <?php endif; ?>
     <p>Por segurança, apague o arquivo <code>instalar.php</code> do servidor.</p>
     <a class="btn primary" href="./">Entrar na biblioteca</a>
