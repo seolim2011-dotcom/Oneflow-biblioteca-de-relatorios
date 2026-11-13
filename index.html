@@ -16,7 +16,7 @@
 <div class="login" id="setup" hidden>
   <div class="login-card">
     <div class="brand"><span class="eyebrow">Workflow</span><h1>Roteiros células One Flow</h1></div>
-    <p>O site ainda não está ligado ao banco de dados. Preencha a <code>supabaseUrl</code> e a <code>supabaseAnonKey</code> no arquivo <code>config.js</code>, seguindo o passo a passo do <code>README.md</code>.</p>
+    <p id="setup-msg">Não foi possível abrir a biblioteca agora. Verifique a internet e recarregue a página.</p>
   </div>
 </div>
 
@@ -39,7 +39,7 @@
 <div class="login" id="newpass" hidden>
   <div class="login-card">
     <div class="brand"><span class="eyebrow">Workflow</span><h1>Defina sua senha</h1></div>
-    <p>Crie a senha que você vai usar para entrar na biblioteca.</p>
+    <p>Você entrou com uma senha provisória. Crie a sua senha para continuar.</p>
     <form id="np-form" novalidate>
       <div class="field"><label for="np-pass">Nova senha <small>mínimo de 8 caracteres</small></label><input id="np-pass" type="password" autocomplete="new-password" required></div>
       <div class="field"><label for="np-pass2">Repita a senha</label><input id="np-pass2" type="password" autocomplete="new-password" required></div>
@@ -74,6 +74,7 @@
       <span class="stats" id="stats">Carregando a biblioteca…</span>
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:8px">
+      <button class="btn" id="users" type="button" hidden>Usuários</button>
       <button class="btn" id="import" type="button" hidden>Importar PDFs</button>
       <button class="btn primary" id="new" type="button" hidden>+ Novo roteiro</button>
     </div>
@@ -131,8 +132,6 @@
 <dialog id="dlg" aria-label="Roteiro"><div class="dlg" id="dlg-inner"></div></dialog>
 <div class="toast" id="toast" role="status" hidden></div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="config.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

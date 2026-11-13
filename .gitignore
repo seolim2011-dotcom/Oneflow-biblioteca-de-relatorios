@@ -1,3 +1,10 @@
+# Senha do banco: fica só no servidor
+api/config.php
+# PDFs enviados pelo site
+storage/pdfs/*
+!storage/pdfs/.gitkeep
+# Versão antiga (claude.ai)
+biblioteca-roteiros.html
 .claude/
 .DS_Store
 Thumbs.db

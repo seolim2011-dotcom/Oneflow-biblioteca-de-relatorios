@@ -1,13 +1,30 @@
 /* Roteiros células One Flow — biblioteca de roteiros de estudo bíblico
-   Login, banco e PDFs: Supabase. Leitura de PDF: pdf.js. PDF gerado: jsPDF. */
+   Login, banco e PDFs: API em PHP + MySQL (pasta api/). Leitura de PDF: pdf.js. PDF gerado: jsPDF. */
 (() => {
   const $ = id => document.getElementById(id);
-  const cfg = window.ROTEIROS_CONFIG || {};
-  const configured = !!(cfg.supabaseUrl && cfg.supabaseAnonKey) && !/COLE_AQUI/.test(cfg.supabaseUrl + cfg.supabaseAnonKey);
-  if (!configured || !window.supabase) { $("setup").hidden = false; return; }
 
-  const sb = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
-  const BUCKET = "roteiros-pdf";
+  // ---------- API ----------
+  let csrf = "";
+  async function api(action, { body, form, params } = {}) {
+    const url = "api/?a=" + encodeURIComponent(action) + (params ? "&" + new URLSearchParams(params) : "");
+    const post = !!(body || form);
+    const opt = { method: post ? "POST" : "GET", credentials: "same-origin", headers: {} };
+    if (post) opt.headers["X-CSRF-Token"] = csrf;
+    if (form) opt.body = form;
+    else if (body) { opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
+    let res;
+    try { res = await fetch(url, opt); }
+    catch (e) { throw { erro: "Sem conexão. Verifique a internet e tente de novo.", status: 0 }; }
+    let data = null;
+    try { data = await res.json(); } catch (e) {}
+    if (!res.ok) {
+      const err = { erro: data?.erro || "Algo deu errado no servidor. Tente de novo.", status: res.status };
+      if (res.status === 401 && action !== "entrar" && me) onLoggedOut();
+      throw err;
+    }
+    return data || {};
+  }
+  const pdfUrl = (id, baixar) => `api/?a=pdf&id=${encodeURIComponent(id)}${baixar ? "&baixar=1" : ""}`;
 
   // ---------- Livros da Bíblia (ordem canônica protestante) ----------
   const BOOKS = [
@@ -42,8 +59,7 @@
   }
 
   // ---------- Estado ----------
-  let session = null, started = false, isAdmin = false, area = "usuario", readOnly = false;
-  let needNewPass = /type=(invite|recovery)/.test(location.hash);
+  let me = null, started = false, isAdmin = false, area = "usuario", readOnly = false;
   let items = [], loaded = false, loadNote = "", lastLoad = 0, firstHash = true;
   let testament = "", sortBy = "recentes", mode = "busca", selTags = new Set(), tagSort = "az";
   try { sortBy = localStorage.getItem("bib-sort") || "recentes"; } catch (e) {}
@@ -59,10 +75,10 @@
 
   const fromRow = r => {
     const it = {
-      id: r.id, numero: r.numero, titulo: r.titulo || "", passagem: r.passagem || "", tags: r.tags || [],
+      id: String(r.id), numero: r.numero, titulo: r.titulo || "", passagem: r.passagem || "", tags: r.tags || [],
       resumo: r.resumo || "", roteiro: r.roteiro || "", textoPdf: r.texto_pdf || "",
       criadoEm: r.criado_em, atualizadoEm: r.atualizado_em,
-      pdf: r.pdf_path ? { path: r.pdf_path, nome: r.pdf_nome, tamanho: r.pdf_tamanho, paginas: r.pdf_paginas } : null
+      pdf: r.pdf ? { nome: r.pdf.nome, tamanho: r.pdf.tamanho, paginas: r.pdf.paginas } : null
     };
     it._p = parsePassage(it.passagem);
     return it;
@@ -71,47 +87,51 @@
   // ---------- Telas e login ----------
   function show(screen) { ["setup", "login", "newpass", "app"].forEach(id => { $(id).hidden = id !== screen; }); }
 
-  async function onSession(s) {
-    session = s;
-    if (!s) { started = false; isAdmin = false; items = []; loaded = false; if (dlg.open) closeDlg(); show("login"); return; }
-    if (needNewPass) { show("newpass"); return; }
-    if (started) return;
-    started = true;
-    show("app");
-    const { data, error } = await sb.rpc("is_admin");
-    isAdmin = !error && data === true;
+  function onUser(u) {
+    me = u;
+    if (!u) { started = false; isAdmin = false; items = []; loaded = false; if (dlg.open) closeDlg(); show("login"); return; }
+    if (u.trocar_senha) { show("newpass"); $("np-pass").focus(); return; }
+    isAdmin = !!u.is_admin;
     let saved = null;
     try { saved = localStorage.getItem("bib-area"); } catch (e) {}
     area = isAdmin && saved !== "usuario" ? "admin" : "usuario";
     renderAccount();
-    await loadItems();
+    show("app");
+    if (!started) { started = true; loadItems(); } else render();
   }
-  sb.auth.onAuthStateChange((event, s) => {
-    if (event === "PASSWORD_RECOVERY") needNewPass = true;
-    setTimeout(() => onSession(s), 0); // fora do callback, como recomenda o supabase-js
-  });
+  function onLoggedOut() { onUser(null); toast("Sua sessão expirou. Entre de novo."); }
+
+  async function boot() {
+    try {
+      const s = await api("sessao");
+      csrf = s.csrf || "";
+      onUser(s.usuario || null);
+    } catch (e) {
+      $("setup-msg").textContent = e.erro || "Não foi possível abrir a biblioteca agora.";
+      show("setup");
+    }
+  }
 
   $("login-form").addEventListener("submit", async e => {
     e.preventDefault();
     const msg = $("login-msg"), btn = $("login-btn");
-    const email = $("l-email").value.trim(), password = $("l-pass").value;
-    if (!email || !password) { msg.textContent = "Preencha o e-mail e a senha."; return; }
+    const email = $("l-email").value.trim(), senha = $("l-pass").value;
+    if (!email || !senha) { msg.textContent = "Preencha o e-mail e a senha."; return; }
     msg.textContent = ""; btn.disabled = true; btn.textContent = "Entrando…";
-    const { error } = await sb.auth.signInWithPassword({ email, password });
-    btn.disabled = false; btn.textContent = "Entrar";
-    if (error) {
-      msg.textContent = /invalid/i.test(error.message) ? "E-mail ou senha incorretos."
-        : /confirm/i.test(error.message) ? "Este e-mail ainda não foi confirmado. Fale com o administrador."
-        : "Não foi possível entrar agora. Verifique a internet e tente de novo.";
-    } else $("l-pass").value = "";
+    try {
+      const r = await api("entrar", { body: { email, senha } });
+      csrf = r.csrf || csrf;
+      $("l-pass").value = "";
+      onUser(r.usuario);
+    } catch (ex) {
+      msg.textContent = ex.erro;
+      if (ex.status === 419) boot();
+    } finally {
+      btn.disabled = false; btn.textContent = "Entrar";
+    }
   });
-  $("forgot").addEventListener("click", async () => {
-    const email = $("l-email").value.trim(), msg = $("login-msg");
-    if (!email) { msg.textContent = "Digite seu e-mail acima e clique de novo em “Esqueci minha senha”."; $("l-email").focus(); return; }
-    const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
-    msg.textContent = error
-      ? (/rate|seconds|limit/i.test(error.message) ? "Muitos pedidos seguidos. Espere alguns minutos e tente de novo." : "Não foi possível enviar o e-mail agora.")
-      : "Se este e-mail estiver cadastrado, você vai receber um link para criar uma nova senha.";
+  $("forgot").addEventListener("click", () => {
+    $("login-msg").textContent = "Peça a um administrador da biblioteca para criar uma senha provisória para você.";
   });
 
   function checkNewPass(a, b) {
@@ -125,23 +145,28 @@
     const bad = checkNewPass($("np-pass").value, $("np-pass2").value);
     if (bad) { msg.textContent = bad; return; }
     btn.disabled = true;
-    const { error } = await sb.auth.updateUser({ password: $("np-pass").value });
-    btn.disabled = false;
-    if (error) { msg.textContent = "Não foi possível salvar a senha. Abra de novo o link que chegou por e-mail."; return; }
-    needNewPass = false;
-    try { history.replaceState(null, "", location.pathname + location.search); } catch (x) {}
-    toast("Senha salva");
-    const { data } = await sb.auth.getSession();
-    onSession(data.session);
+    try {
+      const r = await api("senha", { body: { nova: $("np-pass").value } });
+      $("np-pass").value = ""; $("np-pass2").value = ""; msg.textContent = "";
+      toast("Senha salva");
+      onUser(r.usuario);
+    } catch (ex) {
+      msg.textContent = ex.erro;
+    } finally {
+      btn.disabled = false;
+    }
   });
-  $("logout").addEventListener("click", async () => { await sb.auth.signOut(); toast("Você saiu da biblioteca"); });
+  $("logout").addEventListener("click", async () => {
+    try { const r = await api("sair", { body: {} }); csrf = r.csrf || csrf; } catch (e) {}
+    onUser(null); toast("Você saiu da biblioteca");
+  });
   $("changepass").addEventListener("click", openPass);
 
   // ---------- Conta e áreas ----------
   function renderAccount() {
-    const email = session?.user?.email || "";
-    $("who-avatar").textContent = (email[0] || "?");
-    $("who-name").textContent = email || "Você";
+    const nome = me?.nome || me?.email || "";
+    $("who-avatar").textContent = (nome[0] || "?");
+    $("who-name").textContent = nome || "Você";
     $("who-role").textContent = isAdmin ? "Administrador" : "Leitor";
     $("who-role").className = "role" + (isAdmin ? " admin" : "");
     $("areaseg").hidden = !isAdmin;
@@ -160,12 +185,13 @@
   // ---------- Dados ----------
   async function loadItems() {
     if (!loaded) { loadNote = "Carregando roteiros…"; render(); }
-    const { data, error } = await sb.from("roteiros").select("*").order("numero", { ascending: true }).limit(2000);
-    if (error) {
-      if (!loaded) { loadNote = "Não foi possível carregar os roteiros. Verifique a internet e recarregue a página."; render(); }
+    try {
+      const { roteiros } = await api("roteiros");
+      items = (roteiros || []).map(fromRow); loaded = true; loadNote = ""; lastLoad = Date.now();
+    } catch (e) {
+      if (!loaded) { loadNote = e.erro || "Não foi possível carregar os roteiros."; render(); }
       return;
     }
-    items = data.map(fromRow); loaded = true; loadNote = ""; lastLoad = Date.now();
     render();
     if (openId && dlg.open && !$("form") && !$("passform")) {
       const cur = items.find(x => x.id === openId);
@@ -174,27 +200,8 @@
     if (firstHash) { firstHash = false; openFromHash(); }
   }
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && session && started && !importing && Date.now() - lastLoad > 60000) loadItems();
+    if (!document.hidden && me && started && !importing && Date.now() - lastLoad > 60000) loadItems();
   });
-
-  function errMsg(ex) {
-    const e = ex?.error || ex || {};
-    const m = String(e.message || ""), st = String(e.statusCode || e.status || "");
-    if (st === "413" || /too large|maximum allowed size|exceeded/i.test(m)) return "O PDF passa de 20 MB. Comprima o arquivo e tente de novo.";
-    if (/mime/i.test(m)) return "Esse arquivo não é um PDF válido.";
-    if (e.code === "42501" || st === "403" || /row-level security|unauthorized|permission/i.test(m)) return "Seu usuário não tem permissão de administrador para salvar roteiros.";
-    if (/fetch|network/i.test(m)) return "Sem conexão. Verifique a internet e tente de novo.";
-    return "Não foi possível salvar agora. Tente de novo.";
-  }
-  const isPermErr = ex => { const e = ex?.error || ex || {}; return e.code === "42501" || String(e.statusCode || "") === "403" || /row-level security/i.test(String(e.message || "")); };
-  const newPath = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now() + "-" + Math.random().toString(36).slice(2)) + ".pdf";
-  async function uploadPdf(file) {
-    const path = newPath();
-    const { error } = await sb.storage.from(BUCKET).upload(path, file, { contentType: "application/pdf", upsert: false });
-    if (error) throw { error };
-    return path;
-  }
-  const removePdf = path => path ? sb.storage.from(BUCKET).remove([path]).catch(() => {}) : null;
 
   // ---------- Busca ----------
   function parseQuery(q) {
@@ -267,6 +274,7 @@
     const pq = mode === "busca" ? parseQuery(q) : { tags: [], nums: [], words: [] };
     $("new").hidden = !canWriteNow();
     $("import").hidden = !canWriteNow();
+    $("users").hidden = !canWriteNow();
 
     const counts = new Map();
     items.forEach(it => (it.tags || []).forEach(t => counts.set(t, (counts.get(t) || 0) + 1)));
@@ -382,7 +390,7 @@
         ${it.passagem ? `<div class="ref">${esc(it.passagem)}</div>` : ""}
         ${it.resumo ? `<p class="lead">${esc(it.resumo)}</p>` : ""}
         ${(it.tags || []).length ? `<div class="tagline">${it.tags.map(t => `<button type="button" class="tag" data-tag="${esc(t)}" data-close="1">#${esc(t)}</button>`).join("")}</div>` : ""}
-        ${it.pdf ? `<div class="pdfview"><div class="pdfbar"><span><strong>${esc(it.pdf.nome || "Roteiro em PDF")}</strong>${it.pdf.paginas ? " · " + pagesTxt(it.pdf.paginas) : ""}</span><a class="btn sm" id="pdf-open" href="#" target="_blank" rel="noopener" hidden>Abrir em nova aba</a></div><div class="pdfpages" id="pdfpages"><p class="dates">Carregando o PDF…</p></div></div>` : ""}
+        ${it.pdf ? `<div class="pdfview"><div class="pdfbar"><span><strong>${esc(it.pdf.nome || "Roteiro em PDF")}</strong>${it.pdf.paginas ? " · " + pagesTxt(it.pdf.paginas) : ""}</span><a class="btn sm" href="${pdfUrl(it.id)}" target="_blank" rel="noopener">Abrir em nova aba</a></div><div class="pdfpages" id="pdfpages"><p class="dates">Carregando o PDF…</p></div></div>` : ""}
         ${it.roteiro || !it.pdf ? `<div class="prose">${renderProse(it.roteiro) || '<p style="color:var(--muted)">Este roteiro ainda não tem conteúdo.</p>'}</div>` : ""}
       </div>
       <div class="dlg-foot">
@@ -392,7 +400,7 @@
     if (!dlg.open) dlg.showModal();
     inner.querySelector(".dlg-body").scrollTop = 0;
     openSig = sig(it);
-    if (it.pdf) renderPdfPages(it.pdf.path); else ++pdfToken;
+    if (it.pdf) renderPdfPages(it.id); else ++pdfToken;
     try { history.replaceState(null, "", "#r-" + it.numero); } catch (e) {}
   }
 
@@ -434,46 +442,30 @@
     if (!titulo) { err.textContent = "Dê um título ao roteiro para poder salvar."; $("f-titulo").focus(); return; }
     if (pdfDraft.reading) { err.textContent = "Espere terminar a leitura do PDF."; return; }
     const prev = openId ? items.find(x => x.id === openId) : null;
-    const row = {
-      titulo,
-      passagem: $("f-passagem").value.trim(),
-      tags: parseTags($("f-tags").value),
-      resumo: $("f-resumo").value.trim(),
-      roteiro: $("f-roteiro").value.replace(/\s+$/, ""),
-      atualizado_em: new Date().toISOString()
-    };
-    const btn = $("f-save"); btn.disabled = true; btn.textContent = "Salvando…";
-    let uploaded = null, written = false;
+    const fd = new FormData();
+    if (prev) fd.append("id", prev.id);
+    fd.append("titulo", titulo);
+    fd.append("passagem", $("f-passagem").value.trim());
+    fd.append("tags", JSON.stringify(parseTags($("f-tags").value)));
+    fd.append("resumo", $("f-resumo").value.trim());
+    fd.append("roteiro", $("f-roteiro").value.replace(/\s+$/, ""));
+    if (pdfDraft.file) {
+      fd.append("pdf", pdfDraft.file, pdfDraft.file.name);
+      fd.append("pdf_paginas", pdfDraft.pages || "");
+      fd.append("texto_pdf", pdfDraft.text || "");
+    } else if (pdfDraft.remove) fd.append("remover_pdf", "1");
+    const btn = $("f-save"); btn.disabled = true; btn.textContent = pdfDraft.file ? "Enviando PDF…" : "Salvando…";
     try {
-      if (pdfDraft.file) {
-        btn.textContent = "Enviando PDF…";
-        uploaded = await uploadPdf(pdfDraft.file);
-        Object.assign(row, { pdf_path: uploaded, pdf_nome: pdfDraft.file.name, pdf_tamanho: pdfDraft.file.size, pdf_paginas: pdfDraft.pages || null, texto_pdf: pdfDraft.text || "" });
-        btn.textContent = "Salvando…";
-      } else if (pdfDraft.remove) {
-        Object.assign(row, { pdf_path: null, pdf_nome: null, pdf_tamanho: null, pdf_paginas: null, texto_pdf: "" });
-      }
-      let id;
-      if (prev) {
-        const { error } = await sb.from("roteiros").update(row).eq("id", prev.id);
-        if (error) throw error;
-        id = prev.id;
-      } else {
-        const { data, error } = await sb.from("roteiros").insert(row).select("id").single();
-        if (error) throw error;
-        id = data.id;
-      }
-      written = true;
-      if (prev?.pdf?.path && (pdfDraft.file || pdfDraft.remove)) removePdf(prev.pdf.path);
+      const { roteiro } = await api("roteiro_salvar", { form: fd });
+      const id = String(roteiro.id);
       toast("Roteiro salvo");
       openId = id;
       await loadItems();
       openRead(id);
     } catch (ex) {
       btn.disabled = false; btn.textContent = "Salvar roteiro";
-      if (uploaded && !written) removePdf(uploaded);
-      err.textContent = errMsg(ex);
-      if (isPermErr(ex)) { readOnly = true; render(); }
+      err.textContent = ex.erro;
+      if (ex.status === 403) { readOnly = true; render(); }
     }
   }
 
@@ -486,9 +478,12 @@
     btn.disabled = true;
     const it = items.find(x => x.id === openId);
     if (!it) return;
-    const { error } = await sb.from("roteiros").delete().eq("id", it.id);
-    if (error) { btn.disabled = false; btn.textContent = "Não foi possível excluir"; return; }
-    if (it.pdf?.path) removePdf(it.pdf.path);
+    try {
+      await api("roteiro_excluir", { body: { id: it.id } });
+    } catch (ex) {
+      btn.disabled = false; btn.textContent = "Não foi possível excluir";
+      return;
+    }
     closeDlg(); toast("Roteiro excluído");
     loadItems();
   }
@@ -499,24 +494,30 @@
     inner.innerHTML = `
       <div class="dlg-head"><strong>Alterar senha</strong><button class="x" type="button" data-act="close" aria-label="Fechar">×</button></div>
       <form class="edit dlg-body" id="passform" novalidate>
+        <div class="field"><label for="cp-atual">Senha atual</label><input id="cp-atual" type="password" autocomplete="current-password"></div>
         <div class="field"><label for="cp-pass">Nova senha <small>mínimo de 8 caracteres</small></label><input id="cp-pass" type="password" autocomplete="new-password"></div>
         <div class="field"><label for="cp-pass2">Repita a nova senha</label><input id="cp-pass2" type="password" autocomplete="new-password"></div>
         <div class="err" id="cp-msg" role="alert"></div>
       </form>
       <div class="dlg-foot"><span></span><span style="display:flex;gap:8px"><button class="btn" type="button" data-act="close">Cancelar</button><button class="btn primary" type="submit" form="passform" id="cp-save">Salvar nova senha</button></span></div>`;
     if (!dlg.open) dlg.showModal();
-    $("cp-pass").focus();
+    $("cp-atual").focus();
   }
   async function savePass(e) {
     e.preventDefault();
     const msg = $("cp-msg");
+    if (!$("cp-atual").value) { msg.textContent = "Digite sua senha atual."; return; }
     const bad = checkNewPass($("cp-pass").value, $("cp-pass2").value);
     if (bad) { msg.textContent = bad; return; }
     const btn = $("cp-save"); btn.disabled = true;
-    const { error } = await sb.auth.updateUser({ password: $("cp-pass").value });
-    btn.disabled = false;
-    if (error) { msg.textContent = /different|same/i.test(error.message) ? "A nova senha precisa ser diferente da atual." : "Não foi possível alterar a senha agora."; return; }
-    closeDlg(); toast("Senha alterada");
+    try {
+      await api("senha", { body: { atual: $("cp-atual").value, nova: $("cp-pass").value } });
+      closeDlg(); toast("Senha alterada");
+    } catch (ex) {
+      msg.textContent = ex.erro;
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   function closeDlg() { openId = null; if (dlg.open) dlg.close(); }
@@ -590,17 +591,13 @@
     renderPdfBox();
   }
 
-  async function renderPdfPages(path) {
+  async function renderPdfPages(id) {
     const token = ++pdfToken;
     const box = $("pdfpages"); if (!box) return;
-    sb.storage.from(BUCKET).createSignedUrl(path, 3600).then(({ data }) => {
-      const a = $("pdf-open");
-      if (data?.signedUrl && a && token === pdfToken) { a.href = data.signedUrl; a.hidden = false; }
-    });
     try {
-      const { data, error } = await sb.storage.from(BUCKET).download(path);
-      if (error) throw error;
-      const bytes = new Uint8Array(await data.arrayBuffer());
+      const res = await fetch(pdfUrl(id), { credentials: "same-origin" });
+      if (!res.ok) throw new Error("http " + res.status);
+      const bytes = new Uint8Array(await res.arrayBuffer());
       if (token !== pdfToken) return;
       const pdf = await openPdf(bytes);
       if (token !== pdfToken) { pdf.destroy(); return; }
@@ -682,22 +679,131 @@
   async function baixar(btn) {
     const it = items.find(x => x.id === openId);
     if (!it) return;
+    if (it.pdf) {
+      const a = document.createElement("a");
+      a.href = pdfUrl(it.id, true); a.download = "";
+      document.body.appendChild(a); a.click(); a.remove();
+      toast("Download iniciado");
+      return;
+    }
     const label = btn.textContent; btn.disabled = true; btn.textContent = "Preparando…";
     try {
-      let blob;
-      if (it.pdf) {
-        const { data, error } = await sb.storage.from(BUCKET).download(it.pdf.path);
-        if (error) throw error;
-        blob = data;
-      } else blob = await makePdf(it);
-      saveBlob(blob, safeName(`${pad(it.numero)} - ${it.titulo}`) + ".pdf");
+      saveBlob(await makePdf(it), safeName(`${pad(it.numero)} - ${it.titulo}`) + ".pdf");
       toast("Download iniciado");
     } catch (ex) {
-      toast("Não foi possível baixar agora. Tente de novo.");
+      toast("Não foi possível gerar o PDF agora. Tente de novo.");
     } finally {
       if (btn.isConnected) { btn.disabled = false; btn.textContent = label; }
     }
   }
+
+  // ---------- Usuários (admin) ----------
+  let users = [], editingUser = null, uArmTimer = null;
+  async function openUsers() {
+    if (!canWriteNow()) return;
+    openId = null; ++pdfToken; editingUser = null;
+    inner.innerHTML = `
+      <div class="dlg-head"><strong>Usuários</strong><button class="x" type="button" data-act="close" aria-label="Fechar">×</button></div>
+      <div class="dlg-body" style="display:flex;flex-direction:column;gap:18px">
+        <p style="margin:0;color:var(--muted)">Leitores pesquisam, leem e baixam roteiros. Administradores também adicionam, editam e excluem roteiros e cadastram pessoas.</p>
+        <div id="userform-wrap"></div>
+        <div class="userlist" id="userlist"><div class="urow"><span class="who"><span>Carregando…</span></span></div></div>
+      </div>
+      <div class="dlg-foot"><span class="dates" id="usercount"></span><button class="btn primary" type="button" data-act="u-new">+ Adicionar usuário</button></div>`;
+    if (!dlg.open) dlg.showModal();
+    await loadUsers();
+  }
+  async function loadUsers() {
+    try {
+      users = (await api("usuarios")).usuarios || [];
+    } catch (ex) {
+      const l = $("userlist");
+      if (l) l.innerHTML = `<div class="urow"><span class="who"><span>${esc(ex.erro)}</span></span></div>`;
+      return;
+    }
+    renderUsers();
+  }
+  function renderUsers() {
+    const l = $("userlist"); if (!l) return;
+    const admins = users.filter(u => u.is_admin).length;
+    $("usercount").textContent = `${users.length} ${users.length === 1 ? "pessoa" : "pessoas"} · ${admins} ${admins === 1 ? "admin" : "admins"}`;
+    l.innerHTML = users.map(u => `
+      <div class="urow">
+        <span class="avatar-i" aria-hidden="true">${esc((u.nome || u.email)[0] || "?")}</span>
+        <span class="who"><strong>${esc(u.nome || u.email)}</strong><span>${esc(u.email)}${u.trocar_senha ? " · ainda com senha provisória" : ""}${u.id === me?.id ? " · você" : ""}</span></span>
+        <span class="badge${u.is_admin ? " admin" : ""}">${u.is_admin ? "Admin" : "Leitor"}</span>
+        <button class="btn sm" type="button" data-act="u-edit" data-uid="${u.id}">Editar</button>
+      </div>`).join("");
+  }
+  function openUserForm(u) {
+    editingUser = u || null;
+    const wrap = $("userform-wrap"); if (!wrap) return;
+    const self = !!u && u.id === me?.id;
+    wrap.innerHTML = `
+      <form class="edit userform" id="userform" novalidate>
+        <strong>${u ? "Editar " + esc(u.nome || u.email) : "Novo usuário"}</strong>
+        <div class="row2">
+          <div class="field"><label for="u-nome">Nome</label><input id="u-nome" maxlength="120" value="${esc(u?.nome)}"></div>
+          <div class="field"><label for="u-email">E-mail</label><input id="u-email" type="email" maxlength="190" value="${esc(u?.email)}"></div>
+        </div>
+        <div class="field"><label for="u-senha">${u ? "Nova senha provisória <small>deixe em branco para manter a atual</small>" : "Senha provisória <small>mínimo de 8 caracteres · a pessoa troca no primeiro acesso</small>"}</label>
+          <div style="display:flex;gap:8px"><input id="u-senha" type="text" autocomplete="off" spellcheck="false"><button class="btn sm" type="button" data-act="u-gen">Gerar</button></div></div>
+        <label class="check"><input type="checkbox" id="u-admin"${u?.is_admin ? " checked" : ""}${self ? " disabled" : ""}> Administrador</label>
+        <div class="err" id="u-err" role="alert"></div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between">
+          <span>${u && !self ? '<button class="btn danger" type="button" data-act="u-del">Remover usuário</button>' : ""}</span>
+          <span style="display:flex;gap:8px"><button class="btn" type="button" data-act="u-cancel">Cancelar</button><button class="btn primary" type="submit" id="u-save">Salvar usuário</button></span>
+        </div>
+      </form>`;
+    $("u-nome").focus();
+  }
+  async function saveUser(e) {
+    e.preventDefault();
+    const err = $("u-err");
+    const self = !!editingUser && editingUser.id === me?.id;
+    const body = {
+      id: editingUser?.id || 0,
+      nome: $("u-nome").value.trim(),
+      email: $("u-email").value.trim(),
+      senha: $("u-senha").value,
+      is_admin: self || $("u-admin").checked
+    };
+    if (!body.email) { err.textContent = "Digite o e-mail."; return; }
+    if ((!editingUser || body.senha) && body.senha.length < 8) { err.textContent = "A senha provisória precisa de pelo menos 8 caracteres."; return; }
+    const btn = $("u-save"); btn.disabled = true;
+    try {
+      await api("usuario_salvar", { body });
+      $("userform-wrap").innerHTML = "";
+      editingUser = null;
+      toast(body.senha ? "Usuário salvo. Envie o e-mail e a senha provisória para a pessoa." : "Usuário salvo");
+      await loadUsers();
+    } catch (ex) {
+      err.textContent = ex.erro; btn.disabled = false;
+    }
+  }
+  async function delUser(btn) {
+    if (!editingUser) return;
+    if (!btn.classList.contains("armed")) {
+      btn.classList.add("armed"); btn.textContent = "Confirmar remoção";
+      clearTimeout(uArmTimer); uArmTimer = setTimeout(() => { btn.classList.remove("armed"); btn.textContent = "Remover usuário"; }, 4000);
+      return;
+    }
+    btn.disabled = true;
+    try {
+      await api("usuario_excluir", { body: { id: editingUser.id } });
+      $("userform-wrap").innerHTML = ""; editingUser = null;
+      toast("Usuário removido");
+      await loadUsers();
+    } catch (ex) {
+      $("u-err").textContent = ex.erro; btn.disabled = false;
+    }
+  }
+  const genPass = () => {
+    const abc = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789", a = new Uint32Array(10);
+    crypto.getRandomValues(a);
+    return [...a].map(n => abc[n % abc.length]).join("");
+  };
+  $("users").addEventListener("click", openUsers);
 
   // ---------- Importar vários PDFs ----------
   let importFiles = [], importing = false;
@@ -732,24 +838,23 @@
       if (x.skip || x.ok) continue;
       if (stop) { x.st = "Não importado"; continue; }
       x.st = "Lendo…"; renderImportList();
-      let text = "", pages = null, path = null;
+      let text = "", pages = null;
       try { const r = await readPdfFile(x.file); text = r.text; pages = r.pages; } catch (e) {}
       x.st = "Enviando…"; renderImportList();
       try {
-        path = await uploadPdf(x.file);
-        const now = new Date().toISOString();
-        const { data, error } = await sb.from("roteiros").insert({
-          titulo: titleFromFile(x.file.name), passagem: "", tags, resumo: "", roteiro: "",
-          pdf_path: path, pdf_nome: x.file.name, pdf_tamanho: x.file.size, pdf_paginas: pages, texto_pdf: text,
-          criado_em: now, atualizado_em: now
-        }).select("numero").single();
-        if (error) throw error;
-        done++; x.ok = true; x.st = pad(data.numero) + " criado";
+        const fd = new FormData();
+        fd.append("titulo", titleFromFile(x.file.name));
+        fd.append("tags", JSON.stringify(tags));
+        fd.append("roteiro", "");
+        fd.append("pdf", x.file, x.file.name);
+        fd.append("pdf_paginas", pages || "");
+        fd.append("texto_pdf", text);
+        const { roteiro } = await api("roteiro_salvar", { form: fd });
+        done++; x.ok = true; x.st = pad(roteiro.numero) + " criado";
       } catch (ex) {
-        if (path) removePdf(path);
         x.st = "Não importado";
-        const el = $("imp-err"); if (el) el.textContent = errMsg(ex);
-        if (isPermErr(ex)) { stop = true; readOnly = true; }
+        const el = $("imp-err"); if (el) el.textContent = ex.erro;
+        if ([401, 403, 419].includes(ex.status)) { stop = true; if (ex.status === 403) readOnly = true; }
       }
       renderImportList();
     }
@@ -797,10 +902,16 @@
       renderPdfBox();
     }
     else if (act === "import-run") runImport();
+    else if (act === "u-new") openUserForm(null);
+    else if (act === "u-edit") openUserForm(users.find(u => String(u.id) === actEl.dataset.uid));
+    else if (act === "u-cancel") { $("userform-wrap").innerHTML = ""; editingUser = null; }
+    else if (act === "u-del") delUser(actEl);
+    else if (act === "u-gen") { const i = $("u-senha"); if (i) { i.value = genPass(); i.select(); } }
   });
   document.addEventListener("submit", e => {
     if (e.target.id === "form") save(e);
     else if (e.target.id === "passform") savePass(e);
+    else if (e.target.id === "userform") saveUser(e);
   });
   $("new").addEventListener("click", () => { if (canWriteNow()) openEdit(null); });
   qEl.addEventListener("input", render);
@@ -832,4 +943,5 @@
   window.addEventListener("hashchange", openFromHash);
 
   try { if (localStorage.getItem("bib-mode") === "temas") setMode("temas"); } catch (e) {}
+  boot();
 })();

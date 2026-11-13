@@ -1,95 +1,70 @@
 # Roteiros células One Flow
 
-Biblioteca de roteiros de estudo bíblico das células One Flow.
+Biblioteca de roteiros de estudo bíblico das células One Flow, para hospedar na **Hostinger**.
 
-- **Usuários (leitores):** entram com e-mail e senha, pesquisam pelo nome ou pelos temas (#), leem os roteiros e baixam em PDF.
-- **Administradores:** além disso, adicionam, editam, importam PDFs e excluem roteiros.
+- **Leitores:** entram com e-mail e senha, pesquisam pelo nome ou pelos temas (#), leem os roteiros e baixam em PDF.
+- **Administradores:** além disso, adicionam, editam, importam PDFs e excluem roteiros, e cadastram as pessoas.
 
-O site é estático e fica hospedado no **GitHub Pages**. O login, o banco de dados e os PDFs ficam no **Supabase**, que tem um plano gratuito.
+Tudo roda no seu plano da Hostinger: as páginas, a API em **PHP**, o banco **MySQL** e os PDFs. Não é preciso nenhum outro serviço.
 
 ## Arquivos
 
 | Arquivo | Para que serve |
 |---|---|
-| `index.html` | Estrutura das telas: login, definir senha e biblioteca |
-| `style.css` | Visual (cores, fontes, modo escuro) |
-| `app.js` | Funcionamento: busca, temas, leitura, PDFs, áreas de usuário e admin |
-| `config.js` | Endereço e chave pública do seu projeto Supabase |
-| `supabase/setup.sql` | Cria tabelas, regras de acesso, armazenamento de PDFs e 3 roteiros de exemplo |
+| `index.html`, `style.css`, `app.js` | O site: login, busca, temas, leitura, PDFs, área do usuário e área do admin |
+| `api/index.php` | A API: login, roteiros, PDFs e usuários, com as permissões de leitor e admin |
+| `api/bootstrap.php`, `api/schema.sql` | Conexão com o banco e criação das tabelas |
+| `api/config.sample.php` | Modelo do `config.php`, que guarda os dados do banco (só no servidor) |
+| `instalar.php` | Página de instalação: cria as tabelas e o primeiro administrador |
+| `storage/pdfs/` | Onde os PDFs enviados ficam guardados (bloqueada para acesso direto) |
+| `.htaccess` | Regras de segurança do servidor |
 
-## Passo a passo
+## Instalação na Hostinger
 
-### 1. Criar o projeto no Supabase
+### 1. Criar o banco MySQL
 
-1. Crie uma conta em [supabase.com](https://supabase.com) e clique em **New project**.
-2. Dê um nome (por exemplo `roteiros-one-flow`), crie uma senha para o banco e escolha a região **South America (São Paulo)**.
+1. No **hPanel**, abra **Bancos de dados → Gerenciamento** (Databases → Management).
+2. Crie um banco, um usuário e uma senha. Anote os três: a Hostinger acrescenta um prefixo, como `u123456789_roteiros`.
 
-### 2. Criar o banco
+### 2. Enviar os arquivos
 
-1. No menu do projeto, abra **SQL Editor** e clique em **New query**.
-2. Cole todo o conteúdo de `supabase/setup.sql` e clique em **Run**.
+Escolha **um** dos caminhos:
 
-Esse script cria a tabela de roteiros, a lista de administradores, o espaço para os PDFs e as regras de segurança: só quem entrou pode ler, e só administradores podem gravar.
+- **Pelo GitHub (recomendado, atualiza fácil):** no hPanel, abra **Avançado → Git**, informe o endereço do repositório, a branch `main` e a pasta `public_html` (deixe a pasta vazia antes). Clique em **Criar** e depois em **Deploy**. Para publicar mudanças futuras, clique em **Deploy** de novo ou ative o deploy automático.
+- **Pelo Gerenciador de Arquivos:** compacte os arquivos deste projeto em um `.zip`, envie para `public_html` e use **Extrair**.
 
-### 3. Fechar o cadastro público
+### 3. Criar o `config.php`
 
-Em **Authentication → Sign In / Providers**, desligue **Allow new users to sign up**.
+1. No **Gerenciador de Arquivos**, entre em `public_html/api/`.
+2. Copie o `config.sample.php` com o nome `config.php`.
+3. Edite o `config.php` e preencha `db_name`, `db_user` e `db_pass` com os dados do passo 1. Na Hostinger, o `db_host` é `localhost`.
 
-Assim ninguém consegue criar conta sozinho: só entra quem você cadastrar.
+O `config.php` tem a senha do banco: ele fica **só no servidor** e não vai para o GitHub.
 
-### 4. Cadastrar as pessoas
+### 4. Instalar
 
-Em **Authentication → Users → Add user → Create new user**:
+1. Abra `https://SEU-DOMINIO/instalar.php`.
+2. Crie a conta do primeiro administrador (seu nome, e-mail e senha).
+3. Pronto: as tabelas e 3 roteiros de exemplo são criados. **Apague o `instalar.php`** do servidor depois. Ele já se bloqueia sozinho, mas é melhor não deixar lá.
 
-1. Digite o e-mail e uma senha provisória da pessoa.
-2. Marque **Auto Confirm User**.
-3. Envie a senha para a pessoa. Depois de entrar, ela pode trocar a senha em **Alterar senha**, no topo do site.
+Se a página avisar que a pasta de PDFs não pode ser gravada, dê permissão **755** à pasta `storage/pdfs` no Gerenciador de Arquivos.
 
-### 5. Escolher os administradores
+### 5. Ativar o HTTPS
 
-Cadastre-se primeiro como usuário (passo 4). Depois rode no **SQL Editor**, trocando o e-mail:
+No hPanel, em **Segurança → SSL**, confirme que o certificado gratuito está ativo e ligue **Forçar HTTPS**.
 
-```sql
-insert into public.admins (user_id)
-select id from auth.users where email = 'seu-email@exemplo.com'
-on conflict do nothing;
-```
+## Cadastrar as pessoas
 
-Para tirar alguém da lista de administradores:
+1. Entre no site como administrador e fique na **Área do admin**.
+2. Clique em **Usuários → + Adicionar usuário**.
+3. Preencha nome e e-mail. Clique em **Gerar** para criar uma senha provisória e marque **Administrador** se for o caso.
+4. Envie o e-mail e a senha provisória para a pessoa. No primeiro acesso, o site pede para ela criar a própria senha.
 
-```sql
-delete from public.admins
-where user_id = (select id from auth.users where email = 'email@exemplo.com');
-```
-
-### 6. Ligar o site ao Supabase
-
-Em **Project Settings → API** (ou no botão **Connect**), copie:
-
-- **Project URL** → cole em `supabaseUrl` no `config.js`
-- **anon public** (chave pública) → cole em `supabaseAnonKey` no `config.js`
-
-A chave **anon public** pode ficar no GitHub sem problema: quem protege os dados são as regras do `setup.sql`. **Nunca** coloque a chave `service_role` no site.
-
-### 7. Publicar no GitHub Pages
-
-1. Envie os arquivos para o repositório no GitHub.
-2. No repositório, abra **Settings → Pages**.
-3. Em **Build and deployment**, escolha **Deploy from a branch**, branch **main** e pasta **/ (root)**. Clique em **Save**.
-4. Em um ou dois minutos, o site fica disponível em `https://SEU-USUARIO.github.io/NOME-DO-REPOSITORIO/`.
-
-### 8. Configurar o endereço do site no Supabase
-
-Em **Authentication → URL Configuration**:
-
-- **Site URL:** o endereço do GitHub Pages (por exemplo `https://SEU-USUARIO.github.io/NOME-DO-REPOSITORIO/`)
-- **Redirect URLs:** adicione o mesmo endereço
-
-Sem isso, o link de **Esqueci minha senha** não volta para o site.
+Quem esquecer a senha pede a um administrador, que abre **Usuários → Editar** e gera uma nova senha provisória.
 
 ## Bom saber
 
-- **Projeto pausado:** no plano gratuito, o Supabase pausa o projeto depois de uma semana sem nenhum acesso. Para reativar, entre no painel do Supabase e clique em **Restore**.
-- **E-mails limitados:** no plano gratuito, o Supabase envia poucos e-mails por hora (recuperação de senha). Por isso o cadastro é feito com senha provisória, sem convite por e-mail.
-- **Espaço:** o plano gratuito tem 1 GB para PDFs. Cada PDF pode ter até 20 MB.
+- **Tamanho dos PDFs:** até 20 MB cada. Se a Hostinger recusar arquivos grandes, aumente `upload_max_filesize` e `post_max_size` para `25M` em **Avançado → Configuração do PHP**.
+- **Versão do PHP:** use 8.1 ou mais nova (hPanel → Avançado → Configuração do PHP).
+- **Backup:** o hPanel faz backups automáticos. Os roteiros ficam no banco MySQL e os PDFs em `storage/pdfs/`.
 - **Formatação do roteiro:** no campo **Roteiro**, use `## Título` para seções, `- item` para listas, `1. pergunta` para perguntas numeradas, `> texto` para citar versículos e `**negrito**`.

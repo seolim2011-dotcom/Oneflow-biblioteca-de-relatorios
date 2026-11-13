@@ -223,3 +223,17 @@ label small { font-weight: 400; color: var(--muted); }
 .msg { font-size: 13px; min-height: 1em; color: var(--accent); }
 .avatar-i { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: var(--surface); display: grid; place-items: center; font-weight: 600; font-size: 14px; flex: none; text-transform: uppercase; }
 .top-right { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.login-card a.btn { text-decoration: none; }
+
+/* Usuários */
+.userlist { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 8px; }
+.urow { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-top: 1px solid var(--line); }
+.urow:first-child { border-top: 0; }
+.urow .who { flex: 1; }
+.urow .who span { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.badge { font-size: 11px; font-weight: 600; border-radius: 999px; padding: 2px 8px; background: var(--accent-soft); color: var(--ink); white-space: nowrap; }
+.badge.admin { background: var(--accent); color: var(--surface); }
+.check { display: flex; align-items: center; gap: 8px; font-weight: 500; font-size: 14px; }
+.check input { width: 18px; height: 18px; accent-color: var(--accent); }
+.userform { border: 1px solid var(--line); border-radius: 8px; padding: 18px; background: var(--paper); }
+.userform .edit input[type="text"], .userform input:not([type="checkbox"]) { background: var(--surface); }

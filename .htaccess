@@ -1,0 +1,21 @@
+# Roteiros células One Flow — regras do servidor (Hostinger / LiteSpeed / Apache)
+Options -Indexes
+DirectoryIndex index.html
+
+# Bloqueia arquivos internos: pasta .git (deploy pelo Git), README, SQL e afins
+RedirectMatch 404 /\.git
+<FilesMatch "\.(md|sql|sample\.php|gitignore|gitkeep)$">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</FilesMatch>
+
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Referrer-Policy "same-origin"
+  Header always set X-Frame-Options "SAMEORIGIN"
+</IfModule>
