@@ -395,22 +395,8 @@
         ${it.resumo ? `<p class="resumo">${highlight(it.resumo, pq.words)}</p>` : it.textoPdf ? `<p class="resumo">${highlight(it.textoPdf.slice(0, 220), pq.words)}</p>` : ""}
         ${(it.tags || []).length ? `<span class="mini">${it.tags.map(t => "#" + esc(t)).join(" ")}</span>` : ""}
       </button>`;
-    if (sortBy !== "recentes" && sortBy !== "antigos") {
-      listEl.innerHTML = `<div class="grid">${shown.map(card).join("")}</div>`;
-      return;
-    }
-    // Organizados por data: um bloco por mês, com o título do mês e a quantidade
-    const grupos = [];
-    shown.forEach(it => {
-      const ym = effDate(it).slice(0, 7);
-      const g = grupos[grupos.length - 1];
-      if (g && g.ym === ym) g.itens.push(it); else grupos.push({ ym, itens: [it] });
-    });
-    listEl.innerHTML = grupos.map(g => `
-      <section class="mgroup">
-        <h3 class="mtitle">${g.ym ? esc(fmtMes(g.ym)) : "Sem data"}<span>${g.itens.length} ${g.itens.length === 1 ? "roteiro" : "roteiros"}</span></h3>
-        <div class="grid">${g.itens.map(card).join("")}</div>
-      </section>`).join("");
+    // Todos os quadros numa grade só, na ordem escolhida (por padrão, data mais recente primeiro)
+    listEl.innerHTML = `<div class="grid">${shown.map(card).join("")}</div>`;
   }
 
   function renderTags(counts) {
