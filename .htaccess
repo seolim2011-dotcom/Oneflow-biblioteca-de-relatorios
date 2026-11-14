@@ -17,7 +17,14 @@ RedirectMatch 404 /\.git
 <IfModule mod_headers.c>
   Header always set X-Content-Type-Options "nosniff"
   Header always set Referrer-Policy "same-origin"
-  Header always set X-Frame-Options "SAMEORIGIN"
+  Header always set X-Frame-Options "DENY"
+  Header always set Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+  # Só HTTPS por um ano (o certificado da Hostinger já está ativo)
+  Header always set Strict-Transport-Security "max-age=31536000"
+  # Política de conteúdo das páginas: scripts só do próprio site e da cdnjs (pdf.js e jsPDF)
+  <FilesMatch "\.html$">
+    Header always set Content-Security-Policy "default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+  </FilesMatch>
 </IfModule>
 
 # Sempre conferir se há versão nova da página, do script e do estilo

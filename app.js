@@ -22,7 +22,21 @@
       if (res.status === 401 && action !== "entrar" && me) onLoggedOut();
       throw err;
     }
+    if (data && data.csrf) csrf = data.csrf;
     return data || {};
+  }
+  // Primeiro toque arma o botão (muda o texto); o segundo, em até 4 s, confirma
+  function armConfirm(btn, armedText) {
+    if (btn.classList.contains("armed")) {
+      clearTimeout(btn._armTimer);
+      btn.classList.remove("armed");
+      if (btn.dataset.label) btn.textContent = btn.dataset.label;
+      return true;
+    }
+    btn.dataset.label = btn.textContent;
+    btn.classList.add("armed"); btn.textContent = armedText;
+    btn._armTimer = setTimeout(() => { btn.classList.remove("armed"); btn.textContent = btn.dataset.label; }, 4000);
+    return false;
   }
   const pdfUrl = (id, baixar) => `api/?a=pdf&id=${encodeURIComponent(id)}${baixar ? "&baixar=1" : ""}`;
 
@@ -422,7 +436,7 @@
   }
 
   // ---------- Painel de leitura ----------
-  let openId = null, armTimer = null, openSig = "";
+  let openId = null, openSig = "";
   const sig = it => JSON.stringify([it.numero, it.titulo, it.passagem, it.tags, it.resumo, it.roteiro, it.pdf, it.criadoEm, it.atualizadoEm]);
   const pagesTxt = n => n ? `${n} ${n === 1 ? "página" : "páginas"}` : "";
 
@@ -500,11 +514,11 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
         ${it.passagem ? `<div class="ref">${esc(it.passagem)}</div>` : ""}
         ${it.resumo ? `<p class="lead">${esc(it.resumo)}</p>` : ""}
         ${(it.tags || []).length ? `<div class="tagline">${it.tags.map(t => `<button type="button" class="tag" data-tag="${esc(t)}" data-close="1">#${esc(t)}</button>`).join("")}</div>` : ""}
-        ${it.pdf ? `<div class="pdfview"><div class="pdfbar"><span><strong>${esc(it.pdf.nome || "Roteiro em PDF")}</strong>${it.pdf.paginas ? " · " + pagesTxt(it.pdf.paginas) : ""}</span><a class="btn sm" href="${pdfUrl(it.id)}" target="_blank" rel="noopener">Abrir em nova aba</a></div><div class="pdfpages" id="pdfpages"><p class="dates">Carregando o PDF…</p></div></div>` : ""}
+        ${it.pdf ? `<div class="pdfview"><div class="pdfbar"><span><strong>${esc(it.pdf.nome || "Roteiro em PDF")}</strong>${it.pdf.paginas ? " · " + pagesTxt(it.pdf.paginas) : ""}</span><a class="btn sm" href="${esc(pdfUrl(it.id))}" target="_blank" rel="noopener">Abrir em nova aba</a></div><div class="pdfpages" id="pdfpages"><p class="dates">Carregando o PDF…</p></div></div>` : ""}
         ${it.roteiro || !it.pdf ? `<div class="prose">${renderProse(it.roteiro) || '<p style="color:var(--muted)">Este roteiro ainda não tem conteúdo.</p>'}</div>` : ""}
       </div>
       <div class="dlg-foot">
-        <span class="dates">${it.criadoEm ? "Criado em " + fmtDate(it.criadoEm) : ""}${it.atualizadoEm && it.atualizadoEm !== it.criadoEm ? " · editado em " + fmtDate(it.atualizadoEm) : ""}</span>
+        <span class="dates">${it.criadoEm ? "Criado em " + esc(fmtDate(it.criadoEm)) : ""}${it.atualizadoEm && it.atualizadoEm !== it.criadoEm ? " · editado em " + esc(fmtDate(it.atualizadoEm)) : ""}</span>
         <span style="display:flex;flex-wrap:wrap;gap:8px">${writable ? `<button class="btn danger" type="button" data-act="del">Excluir</button><button class="btn" type="button" data-act="edit">Editar</button>` : ""}<button class="btn primary" type="button" data-act="download">Baixar PDF</button></span>
       </div>`;
     if (!dlg.open) dlg.showModal();
@@ -583,11 +597,7 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
   }
 
   async function del(btn) {
-    if (!btn.classList.contains("armed")) {
-      btn.classList.add("armed"); btn.textContent = "Confirmar exclusão";
-      clearTimeout(armTimer); armTimer = setTimeout(() => { btn.classList.remove("armed"); btn.textContent = "Excluir"; }, 4000);
-      return;
-    }
+    if (!armConfirm(btn, "Confirmar exclusão")) return;
     btn.disabled = true;
     const it = items.find(x => x.id === openId);
     if (!it) return;
@@ -644,10 +654,22 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
   let pdfDraft = { file: null, text: null, pages: null, remove: false, reading: false, note: "" };
   let pdfToken = 0, pdfjsP = null;
   const PDFJS = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/";
-  const loadScript = src => new Promise((res, rej) => { const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = () => rej(new Error("script")); document.head.appendChild(s); });
+  const loadScript = (src, integrity) => new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = src;
+    if (integrity) { s.integrity = integrity; s.crossOrigin = "anonymous"; }
+    s.onload = res; s.onerror = () => rej(new Error("script"));
+    document.head.appendChild(s);
+  });
+  // Impressões digitais publicadas pela cdnjs: se o arquivo mudar na CDN, o navegador recusa
+  const SRI = {
+    "pdf.min.js": "sha512-q+4liFwdPC/bNdhUpZx6aXDx/h77yEQtn4I1slHydcbZK34nLaR3cAeYSJshoxIOq3mjEf7xJE8YWIUHMn+oCQ==",
+    "pdf.worker.min.js": "sha512-BbrZ76UNZq5BhH7LL7pn9A4TKQpQeNCHOo65/akfelcIBbcVvYWOFQKPXIrykE3qZxYjmDX573oa4Ywsc7rpTw==",
+    "jspdf.umd.min.js": "sha512-qZvrmS2ekKPF2mSznTQsxqPgnpkI4DNTlrdUmTzrDgektczlKNRRhy5X5AAOnx5S09ydFYWWNSfcEqDTTHgtNA=="
+  };
   function getPdfjs() {
     // O worker entra como script comum: o pdf.js roda na própria página.
-    if (!pdfjsP) pdfjsP = loadScript(PDFJS + "pdf.worker.min.js").then(() => loadScript(PDFJS + "pdf.min.js")).then(() => window.pdfjsLib)
+    if (!pdfjsP) pdfjsP = loadScript(PDFJS + "pdf.worker.min.js", SRI["pdf.worker.min.js"]).then(() => loadScript(PDFJS + "pdf.min.js", SRI["pdf.min.js"])).then(() => window.pdfjsLib)
       .catch(e => { pdfjsP = null; throw e; });
     return pdfjsP;
   }
@@ -737,7 +759,7 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
   // ---------- Baixar ----------
   let jspdfP = null;
   function getJsPdf() {
-    if (!jspdfP) jspdfP = loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js").then(() => window.jspdf.jsPDF)
+    if (!jspdfP) jspdfP = loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js", SRI["jspdf.umd.min.js"]).then(() => window.jspdf.jsPDF)
       .catch(e => { jspdfP = null; throw e; });
     return jspdfP;
   }
@@ -811,7 +833,7 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
   }
 
   // ---------- Usuários (admin) ----------
-  let users = [], editingUser = null, uArmTimer = null;
+  let users = [], editingUser = null;
   async function openUsers() {
     if (!canWriteNow()) return;
     openId = null; ++pdfToken; editingUser = null;
@@ -897,11 +919,7 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
   }
   async function delUser(btn) {
     if (!editingUser) return;
-    if (!btn.classList.contains("armed")) {
-      btn.classList.add("armed"); btn.textContent = "Confirmar remoção";
-      clearTimeout(uArmTimer); uArmTimer = setTimeout(() => { btn.classList.remove("armed"); btn.textContent = "Remover usuário"; }, 4000);
-      return;
-    }
+    if (!armConfirm(btn, "Confirmar remoção")) return;
     btn.disabled = true;
     try {
       await api("usuario_excluir", { body: { id: editingUser.id } });
@@ -913,7 +931,7 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
     }
   }
   // ---------- Convites por link (admin) ----------
-  let invites = [], invArmTimer = null;
+  let invites = [];
   async function loadInvites() {
     try {
       invites = (await api("convites")).convites || [];
@@ -999,11 +1017,7 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
     catch (e) { input.select(); toast("Selecione e copie o link com Ctrl+C"); }
   }
   async function revokeInvite(btn) {
-    if (!btn.classList.contains("armed")) {
-      btn.classList.add("armed"); btn.textContent = "Confirmar";
-      clearTimeout(invArmTimer); invArmTimer = setTimeout(() => { btn.classList.remove("armed"); btn.textContent = "Desativar"; }, 4000);
-      return;
-    }
+    if (!armConfirm(btn, "Confirmar")) return;
     btn.disabled = true;
     try {
       await api("convite_revogar", { body: { id: +btn.dataset.iid } });
@@ -1126,12 +1140,8 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
     else if (act === "u-gen") { const i = $("u-senha"); if (i) { i.value = genPass(); i.select(); } }
     else if (act === "use-template") {
       const ta = $("f-roteiro");
-      if (ta && (!ta.value.trim() || actEl.classList.contains("armed"))) {
+      if (ta && (!ta.value.trim() || armConfirm(actEl, "Substituir o texto atual?"))) {
         ta.value = MODELO_CELULA; ta.focus(); ta.setSelectionRange(0, 0); ta.scrollTop = 0;
-        actEl.classList.remove("armed"); actEl.textContent = "Usar modelo da célula";
-      } else if (ta) {
-        actEl.classList.add("armed"); actEl.textContent = "Substituir o texto atual?";
-        setTimeout(() => { if (actEl.isConnected) { actEl.classList.remove("armed"); actEl.textContent = "Usar modelo da célula"; } }, 4000);
       }
     }
     else if (act === "inv-new") openInviteForm();

@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 const MAX_PDF_BYTES = 20 * 1024 * 1024;
 const MIN_SENHA = 8;
+const SESSAO_DIAS = 30;
+
+// Erros do PHP vão para o log do servidor, nunca para a resposta (não vazam caminhos nem quebram o JSON)
+ini_set('display_errors', '0');
+ini_set('log_errors', '1');
 
 // Pasta de dados FORA da pasta pública (ao lado do public_html): guarda o config.php
 // e os PDFs, e não é apagada quando um deploy substitui os arquivos do site.
@@ -69,7 +74,7 @@ function is_https(): bool
 function start_session(): void
 {
     if (session_status() === PHP_SESSION_ACTIVE) return;
-    $lifetime = 60 * 60 * 24 * 30; // 30 dias
+    $lifetime = 60 * 60 * 24 * SESSAO_DIAS;
     ini_set('session.gc_maxlifetime', (string) $lifetime);
     ini_set('session.use_strict_mode', '1');
     session_name('roteiros_sid');
@@ -159,4 +164,70 @@ function find_convite(string $token, bool $lock = false): ?array
     $st->execute([hash('sha256', $token)]);
     $c = $st->fetch();
     return $c ?: null;
+}
+
+// ---------- Segurança ----------
+
+// Cabeçalhos para as respostas geradas pelo PHP (o .htaccess cuida das páginas e arquivos)
+function security_headers(bool $page = false): void
+{
+    header('X-Content-Type-Options: nosniff');
+    header('Referrer-Policy: same-origin');
+    header('X-Frame-Options: DENY');
+    header($page
+        ? "Content-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+        : "Content-Security-Policy: default-src 'none'; frame-ancestors 'none'");
+}
+
+// Marca da senha atual guardada na sessão: se a senha mudar (pelo próprio usuário ou
+// redefinida por um admin), todas as outras sessões daquela conta deixam de valer.
+function password_mark(string $hash): string
+{
+    return hash('sha256', $hash);
+}
+
+// Limite de tentativas por IP e por chave (e-mail, conta…), numa janela de 15 minutos
+function too_many_attempts(string $key, int $maxKey, int $maxIp = 20): bool
+{
+    $st = db()->prepare('SELECT
+        (SELECT COUNT(*) FROM tentativas_login WHERE ip = ? AND criado_em > (NOW() - INTERVAL 15 MINUTE)) AS por_ip,
+        (SELECT COUNT(*) FROM tentativas_login WHERE email = ? AND criado_em > (NOW() - INTERVAL 15 MINUTE)) AS por_chave');
+    $st->execute([client_ip(), $key]);
+    $t = $st->fetch();
+    return (int) $t['por_ip'] >= $maxIp || (int) $t['por_chave'] >= $maxKey;
+}
+
+function note_attempt(string $key): void
+{
+    db()->prepare('INSERT INTO tentativas_login (ip, email) VALUES (?, ?)')->execute([client_ip(), substr($key, 0, 190)]);
+    db()->exec('DELETE FROM tentativas_login WHERE criado_em < (NOW() - INTERVAL 1 DAY)');
+}
+
+function clear_attempts(string $key): void
+{
+    db()->prepare('DELETE FROM tentativas_login WHERE email = ?')->execute([$key]);
+}
+
+function client_ip(): string
+{
+    return substr((string) ($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45);
+}
+
+// O instalador se tranca de vez: arquivo de trava na pasta de dados, ou já existir alguém cadastrado
+function install_lock_file(): ?string
+{
+    return data_dir() ? data_dir() . DIRECTORY_SEPARATOR . 'instalado.lock' : null;
+}
+
+function install_locked(): bool
+{
+    $lock = install_lock_file();
+    if ($lock && is_file($lock)) return true;
+    try {
+        $tem = tables_exist() && (int) db()->query('SELECT COUNT(*) FROM usuarios')->fetchColumn() > 0;
+    } catch (PDOException $e) {
+        $tem = false;
+    }
+    if ($tem && $lock) @file_put_contents($lock, date(DATE_ATOM));
+    return $tem;
 }

@@ -4,8 +4,9 @@
 declare(strict_types=1);
 require __DIR__ . '/api/bootstrap.php';
 
-header('X-Content-Type-Options: nosniff');
 header('Cache-Control: no-store');
+header('X-Robots-Tag: noindex');
+security_headers(true);
 
 $estado = 'form';
 $erro = '';
@@ -23,8 +24,7 @@ if ($CONFIG === null) {
 
 if ($estado === 'form') {
     start_session();
-    $instalado = tables_exist() && (int) db()->query('SELECT COUNT(*) FROM usuarios')->fetchColumn() > 0;
-    if ($instalado) {
+    if (install_locked()) {
         $estado = 'instalado';
     } elseif (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $nome = trim((string) ($_POST['nome'] ?? ''));
@@ -38,13 +38,25 @@ if ($estado === 'form') {
         else {
             try {
                 create_tables();
-                db()->prepare('INSERT INTO usuarios (email, nome, senha_hash, is_admin, trocar_senha) VALUES (?, ?, ?, 1, 0)')
-                    ->execute([$email, text_cut($nome, 120), password_hash($senha, PASSWORD_DEFAULT)]);
-                seed_examples();
-                $dir = storage_dir();
-                $estado = is_dir($dir) && is_writable($dir) ? 'pronto' : 'pronto_sem_pasta';
+                $pdo = db();
+                $pdo->beginTransaction();
+                // Confere de novo dentro da transação: duas instalações ao mesmo tempo não criam dois admins
+                if ((int) $pdo->query('SELECT COUNT(*) FROM usuarios FOR UPDATE')->fetchColumn() > 0) {
+                    $pdo->rollBack();
+                    $estado = 'instalado';
+                } else {
+                    $pdo->prepare('INSERT INTO usuarios (email, nome, senha_hash, is_admin, trocar_senha) VALUES (?, ?, ?, 1, 0)')
+                        ->execute([$email, text_cut($nome, 120), password_hash($senha, PASSWORD_DEFAULT)]);
+                    $pdo->commit();
+                    seed_examples();
+                    install_locked(); // grava a trava do instalador
+                    $dir = storage_dir();
+                    $estado = is_dir($dir) && is_writable($dir) ? 'pronto' : 'pronto_sem_pasta';
+                }
             } catch (PDOException $e) {
-                $erro = 'Não foi possível criar as tabelas: ' . $e->getMessage();
+                if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
+                error_log('instalar.php: ' . $e->getMessage());
+                $erro = 'Não foi possível criar as tabelas. Confira os dados do banco no config.php e tente de novo.';
             }
         }
     }

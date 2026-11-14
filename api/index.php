@@ -1,11 +1,13 @@
 <?php
-// Roteiros células One Flow — API (login, roteiros, PDFs e usuários)
+// Roteiros células One Flow — API (login, roteiros, PDFs, usuários e convites)
 declare(strict_types=1);
 require __DIR__ . '/bootstrap.php';
 
 header('Content-Type: application/json; charset=utf-8');
-header('X-Content-Type-Options: nosniff');
 header('Cache-Control: no-store');
+security_headers();
+
+// ---------- Respostas ----------
 
 function out(array $data, int $code = 200): void
 {
@@ -19,6 +21,9 @@ function fail(string $msg, int $code = 400): void
     out(['erro' => $msg], $code);
 }
 
+const MSG_CONVITE_INVALIDO = 'Este link de convite não vale mais. Peça um novo link a um administrador.';
+const MSG_MUITAS_TENTATIVAS = 'Muitas tentativas seguidas. Espere 15 minutos e tente de novo.';
+
 if ($CONFIG === null) fail('O site ainda não foi configurado. Crie o arquivo api/config.php.', 503);
 try {
     db();
@@ -31,12 +36,27 @@ start_session();
 $action = (string) ($_GET['a'] ?? '');
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
+// Todo POST precisa do token da sessão (proteção contra envios feitos por outros sites)
+if ($method === 'POST') {
+    $token = (string) ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
+    if ($token === '' || !hash_equals((string) ($_SESSION['csrf'] ?? ''), $token)) {
+        fail('A página ficou desatualizada. Recarregue e tente de novo.', 419);
+    }
+}
+
+function require_post(): void
+{
+    global $method;
+    if ($method !== 'POST') fail('Método inválido.', 405);
+}
+
+// ---------- Entrada ----------
+
 function body(): array
 {
     static $b = null;
     if ($b !== null) return $b;
-    $ct = $_SERVER['CONTENT_TYPE'] ?? '';
-    if (stripos($ct, 'application/json') !== false) {
+    if (stripos((string) ($_SERVER['CONTENT_TYPE'] ?? ''), 'application/json') !== false) {
         $b = json_decode((string) file_get_contents('php://input'), true);
         if (!is_array($b)) $b = [];
     } else {
@@ -52,23 +72,64 @@ function str_in(string $key, int $max = 0): string
     return $max > 0 ? text_cut($v, $max) : $v;
 }
 
-function current_user(): ?array
+function raw_in(string $key): string
 {
+    $v = body()[$key] ?? '';
+    return is_scalar($v) ? (string) $v : '';
+}
+
+function int_in(string $key): int
+{
+    $v = body()[$key] ?? 0;
+    return is_scalar($v) ? (int) $v : 0;
+}
+
+function email_in(): string
+{
+    $email = strtolower(str_in('email', 190));
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) fail('Digite um e-mail válido.', 422);
+    return $email;
+}
+
+// ---------- Sessão e permissões ----------
+
+function current_user(bool $refresh = false): ?array
+{
+    static $cache = false;
+    if ($cache !== false && !$refresh) return $cache;
+    $cache = null;
     if (empty($_SESSION['uid'])) return null;
-    $st = db()->prepare('SELECT id, email, nome, is_admin, trocar_senha FROM usuarios WHERE id = ?');
+    $st = db()->prepare('SELECT id, email, nome, senha_hash, is_admin, trocar_senha FROM usuarios WHERE id = ?');
     $st->execute([(int) $_SESSION['uid']]);
     $u = $st->fetch();
-    if (!$u) {
-        unset($_SESSION['uid']);
+    // Conta removida, ou senha trocada em outro lugar: esta sessão deixa de valer
+    if (!$u || !hash_equals((string) ($_SESSION['pwv'] ?? ''), password_mark((string) $u['senha_hash']))) {
+        end_session();
         return null;
     }
-    return [
+    $cache = [
         'id' => (int) $u['id'],
         'email' => $u['email'],
         'nome' => $u['nome'],
         'is_admin' => (bool) $u['is_admin'],
         'trocar_senha' => (bool) $u['trocar_senha'],
     ];
+    return $cache;
+}
+
+function begin_session(int $uid, string $hash): void
+{
+    session_regenerate_id(true);
+    $_SESSION['uid'] = $uid;
+    $_SESSION['pwv'] = password_mark($hash);
+    $_SESSION['csrf'] = bin2hex(random_bytes(32));
+}
+
+function end_session(): void
+{
+    $_SESSION = [];
+    session_regenerate_id(true);
+    $_SESSION['csrf'] = bin2hex(random_bytes(32));
 }
 
 function require_user(bool $allowTempPassword = false): array
@@ -86,10 +147,12 @@ function require_admin(): array
     return $u;
 }
 
-function client_ip(): string
+function session_out(): void
 {
-    return substr((string) ($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45);
+    out(['usuario' => current_user(true), 'csrf' => $_SESSION['csrf']]);
 }
+
+// ---------- Roteiros e PDFs ----------
 
 function roteiro_out(array $r): array
 {
@@ -121,29 +184,38 @@ function find_roteiro(int $id): ?array
     return $r ?: null;
 }
 
+function pdf_path(?string $name): ?string
+{
+    // Só nomes gerados pelo próprio site: 32 caracteres hexadecimais + .pdf
+    if (!$name || !preg_match('/^[a-f0-9]{32}\.pdf$/', $name)) return null;
+    return storage_dir() . DIRECTORY_SEPARATOR . $name;
+}
+
 function delete_pdf_file(?string $name): void
 {
-    if (!$name || !preg_match('/^[a-f0-9]{32}\.pdf$/', $name)) return;
-    $path = storage_dir() . DIRECTORY_SEPARATOR . $name;
-    if (is_file($path)) @unlink($path);
+    $path = pdf_path($name);
+    if ($path && is_file($path)) @unlink($path);
 }
 
 function save_uploaded_pdf(): ?array
 {
     if (empty($_FILES['pdf']) || ($_FILES['pdf']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) return null;
     $f = $_FILES['pdf'];
+    if (is_array($f['error'])) fail('Envie um PDF por vez.', 400);
     if ($f['error'] === UPLOAD_ERR_INI_SIZE || $f['error'] === UPLOAD_ERR_FORM_SIZE) fail('O PDF é maior do que o servidor aceita. Comprima o arquivo e tente de novo.', 413);
-    if ($f['error'] !== UPLOAD_ERR_OK) fail('O envio do PDF falhou. Tente de novo.', 400);
+    if ($f['error'] !== UPLOAD_ERR_OK || !is_uploaded_file($f['tmp_name'])) fail('O envio do PDF falhou. Tente de novo.', 400);
     if ($f['size'] > MAX_PDF_BYTES) fail('O PDF passa de 20 MB. Comprima o arquivo e tente de novo.', 413);
     $fh = fopen($f['tmp_name'], 'rb');
     $head = $fh ? fread($fh, 5) : '';
     if ($fh) fclose($fh);
     if ($head !== '%PDF-') fail('Esse arquivo não é um PDF válido.', 415);
-    $name = bin2hex(random_bytes(16)) . '.pdf';
     $dir = storage_dir();
     if (!is_dir($dir) || !is_writable($dir)) fail('A pasta de PDFs não existe ou não pode ser gravada no servidor.', 500);
+    $name = bin2hex(random_bytes(16)) . '.pdf';
     if (!move_uploaded_file($f['tmp_name'], $dir . DIRECTORY_SEPARATOR . $name)) fail('Não foi possível guardar o PDF no servidor.', 500);
+    @chmod($dir . DIRECTORY_SEPARATOR . $name, 0640);
     $nome = text_cut(basename(str_replace('\\', '/', (string) $f['name'])), 255);
+    $nome = preg_replace('/[\x00-\x1F\x7F]/u', '', $nome) ?? '';
     return ['arquivo' => $name, 'nome' => $nome !== '' ? $nome : 'roteiro.pdf', 'tamanho' => (int) $f['size']];
 }
 
@@ -163,68 +235,68 @@ function parse_tags(): array
     return $tags;
 }
 
-// Todo POST precisa do token da sessão (proteção contra envios de outros sites)
-if ($method === 'POST') {
-    $token = (string) ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
-    if ($token === '' || !hash_equals((string) ($_SESSION['csrf'] ?? ''), $token)) {
-        fail('A página ficou desatualizada. Recarregue e tente de novo.', 419);
-    }
+// ---------- Convites ----------
+
+// Convites criados por quem perdeu o cargo de admin (ou foi removido) deixam de valer
+function revoke_invites_from(int $uid, bool $onlyAdminLinks): void
+{
+    ensure_convites();
+    db()->prepare('UPDATE convites SET revogado = 1 WHERE criado_por = ?' . ($onlyAdminLinks ? ' AND is_admin = 1' : ''))->execute([$uid]);
 }
+
+// ---------- Ações ----------
 
 switch ($action) {
     case 'sessao':
-        out(['usuario' => current_user(), 'csrf' => $_SESSION['csrf']]);
+        session_out();
 
     case 'entrar':
-        if ($method !== 'POST') fail('Método inválido.', 405);
+        require_post();
         $email = strtolower(str_in('email', 190));
-        $senha = (string) (body()['senha'] ?? '');
-        $ip = client_ip();
-        $st = db()->prepare('SELECT
-            (SELECT COUNT(*) FROM tentativas_login WHERE ip = ? AND criado_em > (NOW() - INTERVAL 15 MINUTE)) AS por_ip,
-            (SELECT COUNT(*) FROM tentativas_login WHERE email = ? AND criado_em > (NOW() - INTERVAL 15 MINUTE)) AS por_email');
-        $st->execute([$ip, $email]);
-        $t = $st->fetch();
-        if ((int) $t['por_ip'] >= 20 || (int) $t['por_email'] >= 6) fail('Muitas tentativas seguidas. Espere 15 minutos e tente de novo.', 429);
+        $senha = raw_in('senha');
+        if (too_many_attempts($email, 6)) fail(MSG_MUITAS_TENTATIVAS, 429);
         $st = db()->prepare('SELECT id, senha_hash FROM usuarios WHERE email = ?');
         $st->execute([$email]);
         $u = $st->fetch();
         // Sem usuário, compara com um hash qualquer para a resposta levar o mesmo tempo
         $hash = $u ? (string) $u['senha_hash'] : '$2y$10$usesomesillystringfore7hnbRJHxXVLeakoG8K30oukPsA.ztMG';
         if (!password_verify($senha, $hash) || !$u) {
-            db()->prepare('INSERT INTO tentativas_login (ip, email) VALUES (?, ?)')->execute([$ip, $email]);
-            db()->exec('DELETE FROM tentativas_login WHERE criado_em < (NOW() - INTERVAL 1 DAY)');
+            note_attempt($email);
             fail('E-mail ou senha incorretos.', 401);
         }
-        if (password_needs_rehash($u['senha_hash'], PASSWORD_DEFAULT)) {
-            db()->prepare('UPDATE usuarios SET senha_hash = ? WHERE id = ?')->execute([password_hash($senha, PASSWORD_DEFAULT), $u['id']]);
+        if (password_needs_rehash($hash, PASSWORD_DEFAULT)) {
+            $hash = password_hash($senha, PASSWORD_DEFAULT);
+            db()->prepare('UPDATE usuarios SET senha_hash = ? WHERE id = ?')->execute([$hash, $u['id']]);
         }
-        db()->prepare('DELETE FROM tentativas_login WHERE email = ?')->execute([$email]);
-        session_regenerate_id(true);
-        $_SESSION['uid'] = (int) $u['id'];
-        $_SESSION['csrf'] = bin2hex(random_bytes(32));
-        out(['usuario' => current_user(), 'csrf' => $_SESSION['csrf']]);
+        clear_attempts($email);
+        begin_session((int) $u['id'], $hash);
+        session_out();
 
     case 'sair':
-        if ($method !== 'POST') fail('Método inválido.', 405);
-        $_SESSION = [];
-        session_regenerate_id(true);
-        $_SESSION['csrf'] = bin2hex(random_bytes(32));
+        require_post();
+        end_session();
         out(['ok' => true, 'csrf' => $_SESSION['csrf']]);
 
     case 'senha':
-        if ($method !== 'POST') fail('Método inválido.', 405);
+        require_post();
         $u = require_user(true);
-        $nova = (string) (body()['nova'] ?? '');
+        $chave = 'senha#' . $u['id'];
+        if (too_many_attempts($chave, 5)) fail(MSG_MUITAS_TENTATIVAS, 429);
+        $nova = raw_in('nova');
         if (text_len($nova) < MIN_SENHA) fail('Use pelo menos ' . MIN_SENHA . ' caracteres.', 422);
         $st = db()->prepare('SELECT senha_hash FROM usuarios WHERE id = ?');
         $st->execute([$u['id']]);
         $hash = (string) $st->fetchColumn();
-        if (!$u['trocar_senha'] && !password_verify((string) (body()['atual'] ?? ''), $hash)) fail('A senha atual está incorreta.', 422);
+        if (!$u['trocar_senha'] && !password_verify(raw_in('atual'), $hash)) {
+            note_attempt($chave);
+            fail('A senha atual está incorreta.', 422);
+        }
         if (password_verify($nova, $hash)) fail('A nova senha precisa ser diferente da atual.', 422);
-        db()->prepare('UPDATE usuarios SET senha_hash = ?, trocar_senha = 0 WHERE id = ?')->execute([password_hash($nova, PASSWORD_DEFAULT), $u['id']]);
-        session_regenerate_id(true);
-        out(['usuario' => current_user(), 'csrf' => $_SESSION['csrf']]);
+        $novoHash = password_hash($nova, PASSWORD_DEFAULT);
+        db()->prepare('UPDATE usuarios SET senha_hash = ?, trocar_senha = 0 WHERE id = ?')->execute([$novoHash, $u['id']]);
+        clear_attempts($chave);
+        begin_session($u['id'], $novoHash); // esta sessão continua; as outras desta conta caem
+        session_out();
 
     case 'roteiros':
         require_user();
@@ -232,9 +304,9 @@ switch ($action) {
         out(['roteiros' => array_map('roteiro_out', $rows)]);
 
     case 'roteiro_salvar':
-        if ($method !== 'POST') fail('Método inválido.', 405);
+        require_post();
         require_admin();
-        $id = (int) (body()['id'] ?? 0);
+        $id = int_in('id');
         $prev = $id ? find_roteiro($id) : null;
         if ($id && !$prev) fail('Este roteiro não existe mais.', 404);
         $titulo = str_in('titulo', 140);
@@ -244,7 +316,7 @@ switch ($action) {
             'passagem' => str_in('passagem', 120),
             'tags' => json_encode(parse_tags(), JSON_UNESCAPED_UNICODE),
             'resumo' => str_in('resumo', 400),
-            'roteiro' => text_cut(rtrim((string) (body()['roteiro'] ?? '')), 200000),
+            'roteiro' => text_cut(rtrim(raw_in('roteiro')), 200000),
         ];
         $novo = save_uploaded_pdf();
         $remover = !$novo && str_in('remover_pdf') === '1';
@@ -253,13 +325,14 @@ switch ($action) {
                 'pdf_arquivo' => $novo['arquivo'],
                 'pdf_nome' => $novo['nome'],
                 'pdf_tamanho' => $novo['tamanho'],
-                'pdf_paginas' => (int) str_in('pdf_paginas') ?: null,
-                'texto_pdf' => text_cut((string) (body()['texto_pdf'] ?? ''), 60000),
+                'pdf_paginas' => max(0, int_in('pdf_paginas')) ?: null,
+                'texto_pdf' => text_cut(raw_in('texto_pdf'), 60000),
             ];
         } elseif ($remover) {
             $dados += ['pdf_arquivo' => null, 'pdf_nome' => null, 'pdf_tamanho' => null, 'pdf_paginas' => null, 'texto_pdf' => ''];
         }
         try {
+            // As colunas vêm só das chaves fixas acima; os valores sempre vão como parâmetros
             if ($prev) {
                 $sets = implode(', ', array_map(fn($k) => "$k = :$k", array_keys($dados)));
                 db()->prepare("UPDATE roteiros SET $sets, atualizado_em = NOW() WHERE id = :id")->execute($dados + ['id' => $id]);
@@ -278,22 +351,24 @@ switch ($action) {
         out(['roteiro' => roteiro_out(find_roteiro($id))]);
 
     case 'roteiro_excluir':
-        if ($method !== 'POST') fail('Método inválido.', 405);
+        require_post();
         require_admin();
-        $r = find_roteiro((int) (body()['id'] ?? 0));
-        if (!$r) out(['ok' => true]);
-        db()->prepare('DELETE FROM roteiros WHERE id = ?')->execute([$r['id']]);
-        delete_pdf_file($r['pdf_arquivo']);
+        $r = find_roteiro(int_in('id'));
+        if ($r) {
+            db()->prepare('DELETE FROM roteiros WHERE id = ?')->execute([$r['id']]);
+            delete_pdf_file($r['pdf_arquivo']);
+        }
         out(['ok' => true]);
 
     case 'pdf':
         require_user();
         $r = find_roteiro((int) ($_GET['id'] ?? 0));
-        $path = $r && $r['pdf_arquivo'] ? storage_dir() . DIRECTORY_SEPARATOR . $r['pdf_arquivo'] : '';
+        $path = $r ? pdf_path($r['pdf_arquivo']) : null;
         if (!$path || !is_file($path)) fail('PDF não encontrado.', 404);
-        $nome = str_replace(['"', "\r", "\n"], '', (string) ($r['pdf_nome'] ?: 'roteiro.pdf'));
+        $nome = (string) preg_replace('/[\x00-\x1F\x7F"\\\\]/u', '', (string) ($r['pdf_nome'] ?: 'roteiro.pdf'));
         $ascii = preg_replace('/[^A-Za-z0-9 ._-]/', '_', $nome);
         $tipo = !empty($_GET['baixar']) ? 'attachment' : 'inline';
+        header_remove('Content-Security-Policy');
         header('Content-Type: application/pdf');
         header('Cache-Control: private, max-age=300');
         header('Content-Length: ' . filesize($path));
@@ -314,26 +389,28 @@ switch ($action) {
         ], $rows)]);
 
     case 'usuario_salvar':
-        if ($method !== 'POST') fail('Método inválido.', 405);
+        require_post();
         $eu = require_admin();
-        $id = (int) (body()['id'] ?? 0);
-        $email = strtolower(str_in('email', 190));
+        $id = int_in('id');
+        $email = email_in();
         $nome = str_in('nome', 120);
-        $senha = (string) (body()['senha'] ?? '');
+        $senha = raw_in('senha');
         $admin = !empty(body()['is_admin']) ? 1 : 0;
-        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) fail('Digite um e-mail válido.', 422);
         if ((!$id || $senha !== '') && text_len($senha) < MIN_SENHA) fail('A senha provisória precisa de pelo menos ' . MIN_SENHA . ' caracteres.', 422);
         if ($id === $eu['id'] && !$admin) fail('Você não pode tirar seu próprio acesso de administrador.', 422);
         try {
             if ($id) {
-                $st = db()->prepare('SELECT id FROM usuarios WHERE id = ?');
+                $st = db()->prepare('SELECT is_admin FROM usuarios WHERE id = ?');
                 $st->execute([$id]);
-                if (!$st->fetch()) fail('Este usuário não existe mais.', 404);
+                $antes = $st->fetch();
+                if (!$antes) fail('Este usuário não existe mais.', 404);
                 db()->prepare('UPDATE usuarios SET email = ?, nome = ?, is_admin = ? WHERE id = ?')->execute([$email, $nome, $admin, $id]);
                 if ($senha !== '') {
+                    // Senha redefinida: as sessões abertas dessa pessoa caem (a marca da senha muda)
                     db()->prepare('UPDATE usuarios SET senha_hash = ?, trocar_senha = ? WHERE id = ?')
                         ->execute([password_hash($senha, PASSWORD_DEFAULT), $id === $eu['id'] ? 0 : 1, $id]);
                 }
+                if ($antes['is_admin'] && !$admin) revoke_invites_from($id, true);
             } else {
                 db()->prepare('INSERT INTO usuarios (email, nome, senha_hash, is_admin, trocar_senha) VALUES (?, ?, ?, ?, 1)')
                     ->execute([$email, $nome, password_hash($senha, PASSWORD_DEFAULT), $admin]);
@@ -342,13 +419,19 @@ switch ($action) {
             if ($e->getCode() === '23000') fail('Já existe um usuário com este e-mail.', 409);
             fail('Não foi possível salvar o usuário agora.', 500);
         }
-        out(['ok' => true]);
+        if ($id === $eu['id'] && $senha !== '') {
+            $st = db()->prepare('SELECT senha_hash FROM usuarios WHERE id = ?');
+            $st->execute([$id]);
+            begin_session($id, (string) $st->fetchColumn());
+        }
+        out(['ok' => true, 'csrf' => $_SESSION['csrf']]);
 
     case 'usuario_excluir':
-        if ($method !== 'POST') fail('Método inválido.', 405);
+        require_post();
         $eu = require_admin();
-        $id = (int) (body()['id'] ?? 0);
+        $id = int_in('id');
         if ($id === $eu['id']) fail('Você não pode remover a si mesmo.', 422);
+        revoke_invites_from($id, false);
         db()->prepare('DELETE FROM usuarios WHERE id = ?')->execute([$id]);
         out(['ok' => true]);
 
@@ -370,11 +453,11 @@ switch ($action) {
         ], $rows)]);
 
     case 'convite_criar':
-        if ($method !== 'POST') fail('Método inválido.', 405);
+        require_post();
         $eu = require_admin();
         ensure_convites();
         $admin = !empty(body()['is_admin']) ? 1 : 0;
-        $dias = (int) (body()['dias'] ?? 7);
+        $dias = int_in('dias');
         if (!in_array($dias, [1, 7, 30], true)) $dias = 7;
         $multiplo = !$admin && !empty(body()['multiplo']) ? 1 : 0; // link de admin vale para uma pessoa só
         $token = bin2hex(random_bytes(32));
@@ -385,36 +468,42 @@ switch ($action) {
         out(['token' => $token, 'is_admin' => (bool) $admin, 'multiplo' => (bool) $multiplo, 'expira_em' => iso_date((string) $st->fetchColumn())]);
 
     case 'convite_revogar':
-        if ($method !== 'POST') fail('Método inválido.', 405);
+        require_post();
         require_admin();
         ensure_convites();
-        db()->prepare('UPDATE convites SET revogado = 1 WHERE id = ?')->execute([(int) (body()['id'] ?? 0)]);
+        db()->prepare('UPDATE convites SET revogado = 1 WHERE id = ?')->execute([int_in('id')]);
         out(['ok' => true]);
 
     case 'convite_info':
         ensure_convites();
+        if (too_many_attempts('convite', 1000, 30)) fail(MSG_MUITAS_TENTATIVAS, 429);
         $c = find_convite((string) ($_GET['token'] ?? ''));
-        if (!$c) fail('Este link de convite não vale mais. Peça um novo link a um administrador.', 410);
+        if (!$c) {
+            note_attempt('convite');
+            fail(MSG_CONVITE_INVALIDO, 410);
+        }
         out(['is_admin' => (bool) $c['is_admin'], 'expira_em' => iso_date($c['expira_em'])]);
 
     case 'convite_aceitar':
-        if ($method !== 'POST') fail('Método inválido.', 405);
+        require_post();
         ensure_convites();
         if (current_user()) fail('Você já está conectado. Saia da biblioteca para usar este convite.', 409);
+        if (too_many_attempts('convite', 1000, 30)) fail(MSG_MUITAS_TENTATIVAS, 429);
         $token = str_in('token', 64);
-        $email = strtolower(str_in('email', 190));
         $nome = str_in('nome', 120);
-        $senha = (string) (body()['senha'] ?? '');
         if ($nome === '') fail('Digite seu nome.', 422);
-        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) fail('Digite um e-mail válido.', 422);
+        $email = email_in();
+        $senha = raw_in('senha');
         if (text_len($senha) < MIN_SENHA) fail('Use pelo menos ' . MIN_SENHA . ' caracteres na senha.', 422);
+        $hash = password_hash($senha, PASSWORD_DEFAULT);
         $pdo = db();
         $pdo->beginTransaction();
         try {
             $c = find_convite($token, true);
             if (!$c) {
                 $pdo->rollBack();
-                fail('Este link de convite não vale mais. Peça um novo link a um administrador.', 410);
+                note_attempt('convite');
+                fail(MSG_CONVITE_INVALIDO, 410);
             }
             $st = $pdo->prepare('SELECT id FROM usuarios WHERE email = ?');
             $st->execute([$email]);
@@ -423,7 +512,7 @@ switch ($action) {
                 fail('Já existe uma conta com este e-mail. Use “Já tenho conta” para entrar.', 409);
             }
             $pdo->prepare('INSERT INTO usuarios (email, nome, senha_hash, is_admin, trocar_senha) VALUES (?, ?, ?, ?, 0)')
-                ->execute([$email, $nome, password_hash($senha, PASSWORD_DEFAULT), (int) $c['is_admin']]);
+                ->execute([$email, $nome, $hash, (int) $c['is_admin']]);
             $uid = (int) $pdo->lastInsertId();
             $pdo->prepare('UPDATE convites SET usos = usos + 1 WHERE id = ?')->execute([$c['id']]);
             $pdo->commit();
@@ -431,10 +520,8 @@ switch ($action) {
             if ($pdo->inTransaction()) $pdo->rollBack();
             fail('Não foi possível criar sua conta agora. Tente de novo.', 500);
         }
-        session_regenerate_id(true);
-        $_SESSION['uid'] = $uid;
-        $_SESSION['csrf'] = bin2hex(random_bytes(32));
-        out(['usuario' => current_user(), 'csrf' => $_SESSION['csrf']]);
+        begin_session($uid, $hash);
+        session_out();
 
     default:
         fail('Ação desconhecida.', 404);
