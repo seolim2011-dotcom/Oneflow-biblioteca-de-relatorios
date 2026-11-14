@@ -233,6 +233,12 @@
           ${chave("movimento", "Reduzir animações", "Tira movimentos e transições da tela.")}
           ${chave("foco", "Destacar o foco do teclado", "Contorno grosso no item selecionado ao navegar com a tecla Tab.")}
           ${chave("voz", "Ouvir roteiros em voz alta", temVoz ? "Mostra o botão “Ouvir” em cada roteiro, que lê o texto para você." : "Este navegador não tem leitura em voz alta.", temVoz ? "" : " disabled")}
+          ${temVoz ? `<div class="vozbox">
+            <div class="field"><label for="cfg-voz">Voz da leitura</label><select id="cfg-voz">${opcoesVoz()}</select></div>
+            ${grupo("vozVel", "normal", "Velocidade", [["devagar", "Mais devagar"], ["normal", "Normal"], ["rapido", "Mais rápida"]])}
+            <button class="btn sm" type="button" data-act="voz-teste">Testar voz</button>
+            <p class="cfg-note">As vozes vêm do seu aparelho. As mais naturais (★): no computador, o <strong>Microsoft Edge</strong> traz as vozes “Natural” (Francisca e Antonio) e o <strong>Chrome</strong> traz a “Google português do Brasil”. No <strong>iPhone</strong>, baixe a voz Luciana ou Felipe “Premium” em Ajustes › Acessibilidade › Conteúdo Falado › Vozes.</p>
+          </div>` : ""}
           <button class="linkbtn" type="button" data-act="prefs-reset">Voltar tudo ao padrão</button>
         </section>
         ${me ? `<section aria-labelledby="cfg-conta">
@@ -250,6 +256,7 @@
     inner.querySelector('[data-pref="tema"][aria-checked="true"]')?.focus();
   }
   document.addEventListener("change", e => {
+    if (e.target.id === "cfg-voz") { Prefs.set("vozNome", e.target.value); pararVoz(); falar(TEXTO_TESTE); return; }
     const k = e.target.dataset?.prefBool;
     if (!k) return;
     Prefs.set(k, e.target.checked);
@@ -258,6 +265,50 @@
 
   // ---------- Ouvir o roteiro em voz alta ----------
   let falando = false;
+  const VELOCIDADE = { devagar: 0.88, normal: 1, rapido: 1.15 };
+  const TEXTO_TESTE = "Olá! Esta é a voz que vai ler os roteiros da célula para você. Que Deus abençoe o seu encontro.";
+  // Vozes neurais e "premium" soam bem mais humanas que as vozes básicas do sistema
+  function notaVoz(v) {
+    const n = v.name || "";
+    let nota = 0;
+    if (/natural|neural/i.test(n)) nota += 60;
+    if (/premium/i.test(n)) nota += 50;
+    if (/enhanced|aprimorad|melhorad/i.test(n)) nota += 35;
+    if (/google/i.test(n)) nota += 25;
+    if (/online/i.test(n)) nota += 15;
+    if (/compact|espeak|robot/i.test(n)) nota -= 50;
+    if (/^pt[-_]BR$/i.test(v.lang)) nota += 10;
+    return nota;
+  }
+  function vozesPt() {
+    if (!temVoz) return [];
+    return speechSynthesis.getVoices().filter(v => /^pt/i.test(v.lang))
+      .sort((a, b) => notaVoz(b) - notaVoz(a) || a.name.localeCompare(b.name));
+  }
+  function vozEscolhida() {
+    const lista = vozesPt(), nome = Prefs.get().vozNome;
+    return (nome && lista.find(v => v.name === nome)) || lista[0] || null;
+  }
+  function opcoesVoz() {
+    const lista = vozesPt(), atual = Prefs.get().vozNome || "";
+    if (!lista.length) return `<option value="">Nenhuma voz em português neste aparelho</option>`;
+    return `<option value="">Automática: a mais natural (${esc(lista[0].name)})</option>` +
+      lista.map(v => `<option value="${esc(v.name)}"${v.name === atual ? " selected" : ""}>${notaVoz(v) >= 35 ? "★ " : ""}${esc(v.name)}</option>`).join("");
+  }
+  function falar(texto, aoTerminar) {
+    const voz = vozEscolhida(), vel = VELOCIDADE[Prefs.get().vozVel] || 1;
+    const u = new SpeechSynthesisUtterance(texto);
+    u.lang = voz ? voz.lang : "pt-BR";
+    if (voz) u.voice = voz;
+    u.rate = vel; u.pitch = 1;
+    if (aoTerminar) u.onend = aoTerminar;
+    speechSynthesis.speak(u);
+  }
+  if (temVoz) {
+    // A lista de vozes chega depois de a página abrir em vários navegadores
+    speechSynthesis.onvoiceschanged = () => { const sel = $("cfg-voz"); if (sel) sel.innerHTML = opcoesVoz(); };
+    speechSynthesis.getVoices();
+  }
   function textoParaOuvir(it) {
     const corpo = String(it.roteiro || it.textoPdf || "")
       .replace(/^#{1,3}\s+/gm, "").replace(/\*\*|__/g, "").replace(/^>\s?/gm, "")
@@ -275,16 +326,9 @@
     partes.forEach(t => { if (atual && (atual + " " + t).length > 220) { blocos.push(atual); atual = t; } else atual = atual ? atual + " " + t : t; });
     if (atual) blocos.push(atual);
     speechSynthesis.cancel();
-    const vozes = speechSynthesis.getVoices();
-    const voz = vozes.find(v => /^pt[-_]BR/i.test(v.lang)) || vozes.find(v => /^pt/i.test(v.lang));
     falando = true;
     btn.textContent = "Parar"; btn.setAttribute("aria-pressed", "true");
-    blocos.forEach((b, i) => {
-      const u = new SpeechSynthesisUtterance(b);
-      u.lang = "pt-BR"; if (voz) u.voice = voz;
-      if (i === blocos.length - 1) u.onend = pararVoz;
-      speechSynthesis.speak(u);
-    });
+    blocos.forEach((b, i) => falar(b, i === blocos.length - 1 ? pararVoz : null));
   }
   function pararVoz() {
     if (temVoz) speechSynthesis.cancel();
@@ -1302,6 +1346,7 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
     else if (act === "del") { if (canWriteNow()) del(actEl); }
     else if (act === "download") baixar(actEl);
     else if (act === "ouvir") ouvir(actEl);
+    else if (act === "voz-teste") { pararVoz(); falar(TEXTO_TESTE); }
     else if (act === "changepass") openPass();
     else if (act === "logout") { closeDlg(); logout(); }
     else if (act === "prefs-reset") { Prefs.reset(); pararVoz(); openSettings(); toast("Preferências voltaram ao padrão"); }

@@ -461,3 +461,10 @@ dialog { width: min(760px, calc((100vw - 24px) / var(--z, 1))); max-height: calc
   dialog { width: calc(100vw / var(--z, 1)); max-width: calc(100vw / var(--z, 1)); height: calc(100dvh / var(--z, 1)); max-height: calc(100dvh / var(--z, 1)); }
   .dlg { height: calc(100dvh / var(--z, 1)); max-height: calc(100dvh / var(--z, 1)); }
 }
+
+/* Escolha da voz da leitura */
+.vozbox { display: flex; flex-direction: column; gap: 12px; margin-left: 56px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); }
+.vozbox select { width: 100%; padding: 9px 10px; font-size: 14px; border-radius: 8px; }
+.vozbox .btn { align-self: flex-start; }
+.vozbox .cfg-note { margin: 0; }
+@media (max-width: 640px) { .vozbox { margin-left: 0; } }
