@@ -283,3 +283,81 @@ h1, .card h2, .read h2, .login-card h1 { font-weight: 700; letter-spacing: -0.02
 .card h2 { letter-spacing: -0.01em; }
 .prose { font-size: 16.5px; }
 .num, .stats, .count, .tag .n, .dates { font-variant-numeric: tabular-nums; }
+
+/* ============ Responsividade ============ */
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.toast { max-width: calc(100vw - 32px); text-align: center; }
+
+/* Tablet */
+@media (max-width: 900px) {
+  .wrap { padding-block: 28px 56px; gap: 24px; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+}
+
+/* Celular */
+@media (max-width: 640px) {
+  body { font-size: 15px; }
+  .wrap { padding-block: 14px 48px; gap: 20px; }
+
+  /* Topo: conta + links numa linha, área (usuário/admin) embaixo, de ponta a ponta */
+  .topbar { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "acc pass out" "area area area"; align-items: center; column-gap: 14px; row-gap: 12px; padding-bottom: 12px; min-height: 0; }
+  .top-right { display: contents; }
+  .account { grid-area: acc; min-width: 0; }
+  .who strong, .who .role { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #changepass { grid-area: pass; font-size: 13px; padding: 4px 0; }
+  #logout { grid-area: out; font-size: 13px; padding: 4px 0; }
+  #areaseg, #areainfo { grid-area: area; }
+  #areaseg { display: grid; grid-template-columns: 1fr 1fr; }
+  #areaseg button { padding: 9px 8px; font-size: 14px; }
+  #areainfo { justify-self: start; }
+
+  /* Cabeçalho: título em cima, botões do admin em grade */
+  header { flex-direction: column; align-items: stretch; gap: 14px; }
+  .actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .actions .btn { justify-content: center; padding: 10px 12px; }
+  .actions #new { grid-column: 1 / -1; order: -1; padding: 12px; }
+
+  /* Busca */
+  .tabs button { padding: 10px 12px; font-size: 14.5px; }
+  #q { font-size: 16px; padding: 13px 40px 13px 44px; }
+  .searchbox svg { left: 14px; }
+  .hint { display: none; }
+
+  /* Filtros e lista */
+  .toolbar { padding-top: 12px; gap: 10px; }
+  .controls { width: 100%; flex-wrap: nowrap; }
+  .controls .seg { flex: 1 1 auto; }
+  .controls .seg button { flex: 1; padding: 8px 6px; }
+  .controls select { flex: 1 1 auto; min-width: 0; padding: 8px; }
+  .grid { grid-template-columns: 1fr; gap: 10px; }
+  .card { padding: 16px; }
+  .card h2 { font-size: 18px; }
+
+  /* Janelas (roteiro, editor, usuários) em tela cheia */
+  dialog { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; margin: 0; border: 0; border-radius: 0; }
+  .dlg { height: 100dvh; max-height: 100dvh; }
+  .dlg-head { padding: max(10px, env(safe-area-inset-top, 0px)) 14px 10px 18px; }
+  .dlg-body { flex: 1; padding: 20px 18px 28px; }
+  .dlg-foot { padding: 10px 14px max(10px, env(safe-area-inset-bottom, 0px)); gap: 8px; }
+  .dlg-foot > span:last-child { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; }
+  .dlg-foot > span:last-child > .btn { flex: 1 1 auto; justify-content: center; }
+  .dlg-foot .dates:empty, .dlg-foot > span:first-child:empty { display: none; }
+  .read h2 { font-size: 24px; }
+  .prose { font-size: 16px; line-height: 1.65; margin-top: 22px; }
+  .pdfbar { flex-direction: column; align-items: stretch; }
+  .pdfbar .btn { justify-content: center; }
+  #f-roteiro { min-height: 320px; }
+  .labelrow .btn { width: 100%; justify-content: center; }
+
+  /* Usuários e convites */
+  .urow { flex-wrap: wrap; row-gap: 8px; }
+  .urow .who { flex: 1 1 150px; min-width: 0; }
+  .urow .btn { margin-left: auto; }
+  .userform { padding: 14px; }
+  .invite-done > div:last-child .btn { flex: 1 1 auto; justify-content: center; }
+  .invite-done .invlink { min-width: 0; }
+
+  /* Login e convite */
+  .login { padding-block: 20px; align-items: start; }
+  .login-card { padding: 26px 20px; }
+}
