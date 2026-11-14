@@ -375,3 +375,10 @@ h1, .card h2, .read h2, .login-card h1 { font-weight: 700; letter-spacing: -0.02
   .tabs { justify-content: space-between; }
   .tabs button { flex: 1; justify-content: center; padding: 10px 6px; }
 }
+
+/* Roteiros agrupados por mês */
+.mgroup { display: flex; flex-direction: column; gap: 12px; }
+.mgroup + .mgroup { margin-top: 26px; }
+.mtitle { display: flex; align-items: baseline; gap: 10px; margin: 0; font-size: 15px; font-weight: 700; color: var(--ink); text-transform: capitalize; letter-spacing: -0.01em; }
+.mtitle span { font-size: 12.5px; font-weight: 500; color: var(--muted); text-transform: none; }
+.mtitle::after { content: ""; flex: 1; height: 1px; background: var(--line); align-self: center; }

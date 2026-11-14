@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap">
-<link rel="stylesheet" href="style.css?v=202611141728">
+<link rel="stylesheet" href="style.css?v=202611141739">
 </head>
 <body>
 
@@ -115,7 +115,7 @@
         <input id="q" type="search" autocomplete="off" spellcheck="false" placeholder="Buscar por nome, passagem ou #tema" aria-label="Buscar roteiros">
         <button id="clear" type="button" aria-label="Limpar busca" hidden>×</button>
       </div>
-      <div class="hint">Digite um nome (<code>parábolas</code>) ou um livro (<code>Romanos</code>). Aqui também vale <code>#graça</code>, o número do roteiro (<code>#12</code>) e a data (<code>06/11</code>). Para temas e períodos, use as abas <strong>Temas #</strong> e <strong>Datas</strong>.</div>
+      <div class="hint">Digite um nome (<code>parábolas</code>) ou um livro (<code>Romanos</code>). Aqui também vale <code>#graça</code> e a data (<code>06/11</code>). Para temas e períodos, use as abas <strong>Temas #</strong> e <strong>Datas</strong>.</div>
     </div>
 
     <div class="panel" id="panel-temas" role="tabpanel" aria-labelledby="tab-temas" hidden>
@@ -159,10 +159,10 @@
         <button type="button" data-t="NT" aria-pressed="false">Novo</button>
       </div>
       <select id="sort" aria-label="Ordenar">
-        <option value="recentes">Mais recentes</option>
+        <option value="recentes">Data: mais recentes</option>
+        <option value="antigos">Data: mais antigos</option>
         <option value="biblica">Ordem bíblica</option>
         <option value="nome">Nome (A–Z)</option>
-        <option value="numero">Número</option>
       </select>
     </div>
   </div>
@@ -173,6 +173,6 @@
 <dialog id="dlg" aria-label="Roteiro"><div class="dlg" id="dlg-inner"></div></dialog>
 <div class="toast" id="toast" role="status" hidden></div>
 
-<script src="app.js?v=202611141728"></script>
+<script src="app.js?v=202611141739"></script>
 </body>
 </html>

@@ -76,14 +76,14 @@
   let me = null, started = false, isAdmin = false, area = "usuario", readOnly = false;
   let items = [], loaded = false, loadNote = "", lastLoad = 0, firstHash = true;
   let testament = "", sortBy = "recentes", mode = "busca", selTags = new Set(), tagsOpen = false, dateFrom = "", dateTo = "";
-  try { sortBy = localStorage.getItem("bib-sort") || "recentes"; } catch (e) {}
+  try { sortBy = localStorage.getItem("bib-ordem") || "recentes"; } catch (e) {}
   const canWriteNow = () => isAdmin && area === "admin" && !readOnly;
 
   const qEl = $("q"), listEl = $("list"), tagIndex = $("tagindex"), dlg = $("dlg"), inner = $("dlg-inner");
+  if (!["recentes", "antigos", "biblica", "nome"].includes(sortBy)) sortBy = "recentes";
   $("sort").value = sortBy;
 
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const pad = n => "Nº " + String(n || 0).padStart(3, "0");
   const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
   // Data do roteiro: o dia da célula, ou o dia em que foi cadastrado quando não houver
   const effDate = it => it.data || (it.criadoEm ? String(it.criadoEm).slice(0, 10) : "");
@@ -287,15 +287,15 @@
 
   // ---------- Busca ----------
   function parseQuery(q) {
-    const tags = [], nums = [], words = [];
+    const tags = [], words = [];
     String(q || "").trim().split(/\s+/).filter(Boolean).forEach(tok => {
       if (tok.startsWith("#")) {
         const t = norm(tok.slice(1));
         if (!t) return;
-        if (/^\d+$/.test(t)) nums.push(+t); else tags.push(t);
+        tags.push(t);
       } else words.push(norm(tok));
     });
-    return { tags, nums, words };
+    return { tags, words };
   }
   function matches(it, pq) {
     if (testament && it._p?.t !== testament) return false;
@@ -309,7 +309,6 @@
       for (const t of selTags) if (!(it.tags || []).includes(t)) return false;
       return true;
     }
-    if (pq.nums.length && !pq.nums.includes(+it.numero)) return false;
     for (const t of pq.tags) if (!(it.tags || []).some(tag => norm(tag).startsWith(t))) return false;
     if (pq.words.length) {
       const hay = norm([it.titulo, it.passagem, it._p?.book, BOOKS[it._p?.idx]?.[1], it.resumo, it.roteiro, it.textoPdf, fmtDia(effDate(it)), effDate(it) ? fmtMes(effDate(it).slice(0, 7)) : ""].join(" "));
@@ -343,8 +342,8 @@
     const arr = list.slice();
     const cmp = {
       recentes: (a, b) => (effDate(b) + String(b.criadoEm || "")).localeCompare(effDate(a) + String(a.criadoEm || "")),
+      antigos: (a, b) => (effDate(a) + String(a.criadoEm || "")).localeCompare(effDate(b) + String(b.criadoEm || "")),
       nome: (a, b) => String(a.titulo || "").localeCompare(String(b.titulo || ""), "pt-BR"),
-      numero: (a, b) => (a.numero || 0) - (b.numero || 0),
       biblica: (a, b) => ((a._p?.idx ?? 99) - (b._p?.idx ?? 99)) || ((a._p?.ch || 0) - (b._p?.ch || 0)) || ((a._p?.v || 0) - (b._p?.v || 0))
     }[sortBy] || (() => 0);
     arr.sort(cmp);
@@ -359,7 +358,7 @@
   function render() {
     const q = qEl.value;
     $("clear").hidden = !q;
-    const pq = mode === "busca" ? parseQuery(q) : { tags: [], nums: [], words: [] };
+    const pq = mode === "busca" ? parseQuery(q) : { tags: [], words: [] };
     $("new").hidden = !canWriteNow();
     $("import").hidden = !canWriteNow();
     $("users").hidden = !canWriteNow();
@@ -388,14 +387,30 @@
       listEl.innerHTML = `<div class="empty"><strong>Nenhum roteiro encontrado</strong><span>Tente outro termo, menos temas, ou limpe a busca.</span><button class="btn" type="button" data-act="clear">Limpar busca</button></div>`;
       return;
     }
-    listEl.innerHTML = `<div class="grid">${shown.map(it => `
+    const card = it => `
       <button type="button" class="card" data-id="${esc(it.id)}">
-        <span class="card-top"><span class="num">${pad(it.numero)}${effDate(it) ? ` <span class="cdate">· ${fmtDia(effDate(it))}</span>` : ""}</span><span class="right">${it.pdf ? '<span class="pdfbadge">PDF</span>' : ""}<span class="testament">${it._p ? (it._p.t === "AT" ? "ANTIGO T." : "NOVO T.") : ""}</span></span></span>
+        <span class="card-top"><span class="num">${effDate(it) ? fmtDia(effDate(it)) : ""}</span><span class="right">${it.pdf ? '<span class="pdfbadge">PDF</span>' : ""}<span class="testament">${it._p ? (it._p.t === "AT" ? "ANTIGO T." : "NOVO T.") : ""}</span></span></span>
         <h2>${highlight(it.titulo, pq.words)}</h2>
         ${it.passagem ? `<span class="ref">${highlight(it.passagem, pq.words)}</span>` : ""}
         ${it.resumo ? `<p class="resumo">${highlight(it.resumo, pq.words)}</p>` : it.textoPdf ? `<p class="resumo">${highlight(it.textoPdf.slice(0, 220), pq.words)}</p>` : ""}
         ${(it.tags || []).length ? `<span class="mini">${it.tags.map(t => "#" + esc(t)).join(" ")}</span>` : ""}
-      </button>`).join("")}</div>`;
+      </button>`;
+    if (sortBy !== "recentes" && sortBy !== "antigos") {
+      listEl.innerHTML = `<div class="grid">${shown.map(card).join("")}</div>`;
+      return;
+    }
+    // Organizados por data: um bloco por mês, com o título do mês e a quantidade
+    const grupos = [];
+    shown.forEach(it => {
+      const ym = effDate(it).slice(0, 7);
+      const g = grupos[grupos.length - 1];
+      if (g && g.ym === ym) g.itens.push(it); else grupos.push({ ym, itens: [it] });
+    });
+    listEl.innerHTML = grupos.map(g => `
+      <section class="mgroup">
+        <h3 class="mtitle">${g.ym ? esc(fmtMes(g.ym)) : "Sem data"}<span>${g.itens.length} ${g.itens.length === 1 ? "roteiro" : "roteiros"}</span></h3>
+        <div class="grid">${g.itens.map(card).join("")}</div>
+      </section>`).join("");
   }
 
   function renderTags(counts) {
@@ -571,7 +586,7 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
     openId = id;
     const writable = canWriteNow();
     inner.innerHTML = `
-      <div class="dlg-head"><span class="num" style="font-family:var(--font-ref);font-size:13px">${pad(it.numero)}${effDate(it) ? " · " + fmtDia(effDate(it)) : ""}${it._p ? ` · ${it._p.t === "AT" ? "Antigo Testamento" : "Novo Testamento"}` : ""}</span><button class="x" type="button" data-act="close" aria-label="Fechar">×</button></div>
+      <div class="dlg-head"><span class="num" style="font-family:var(--font-ref);font-size:13px">${[effDate(it) ? fmtDia(effDate(it)) : "", it._p ? (it._p.t === "AT" ? "Antigo Testamento" : "Novo Testamento") : ""].filter(Boolean).join(" · ")}</span><button class="x" type="button" data-act="close" aria-label="Fechar">×</button></div>
       <div class="dlg-body read">
         <h2>${esc(it.titulo)}</h2>
         ${it.passagem ? `<div class="ref">${esc(it.passagem)}</div>` : ""}
@@ -598,7 +613,7 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
     pdfDraft = { file: null, text: null, pages: null, remove: false, reading: false, note: "" };
     ++pdfToken;
     inner.innerHTML = `
-      <div class="dlg-head"><strong>${it ? "Editar " + pad(it.numero) : "Novo roteiro"}</strong><button class="x" type="button" data-act="close" aria-label="Fechar">×</button></div>
+      <div class="dlg-head"><strong>${it ? "Editar roteiro" : "Novo roteiro"}</strong><button class="x" type="button" data-act="close" aria-label="Fechar">×</button></div>
       <form class="edit dlg-body" id="form" novalidate>
         <div class="field"><label for="f-titulo">Título</label><input id="f-titulo" required maxlength="140" value="${esc(it?.titulo)}" placeholder="Ex.: O Bom Samaritano"></div>
         <div class="row2">
@@ -851,7 +866,7 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
       y += gap;
     };
     const strip = s => s.replace(/\*\*(.+?)\*\*/g, "$1").replace(/(^|[^*])\*([^*]+)\*/g, "$1$2");
-    write(`${pad(it.numero)}${effDate(it) ? "  ·  " + fmtDia(effDate(it)) : ""}  ·  Roteiros células One Flow`, { size: 9, color: BLUE, gap: 10 });
+    write(`${effDate(it) ? fmtDia(effDate(it)) + "  ·  " : ""}Roteiros células One Flow`, { size: 9, color: BLUE, gap: 10 });
     write(it.titulo, { size: 20, style: "bold", lh: 1.25 });
     if (it.passagem) write(it.passagem, { color: MUTED, gap: 8 });
     if (it.resumo) write(it.resumo, { size: 11.5, style: "italic", color: MUTED, gap: 8 });
@@ -893,7 +908,7 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
     }
     const label = btn.textContent; btn.disabled = true; btn.textContent = "Preparando…";
     try {
-      saveBlob(await makePdf(it), safeName(`${pad(it.numero)} - ${it.titulo}`) + ".pdf");
+      saveBlob(await makePdf(it), safeName(`${it.titulo}${effDate(it) ? " - " + fmtDia(effDate(it)) : ""}`) + ".pdf");
       toast("Download iniciado");
     } catch (ex) {
       toast("Não foi possível gerar o PDF agora. Tente de novo.");
@@ -1152,7 +1167,7 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
         fd.append("pdf_paginas", pages || "");
         fd.append("texto_pdf", text);
         const { roteiro } = await api("roteiro_salvar", { form: fd });
-        done++; x.ok = true; x.st = pad(roteiro.numero) + " criado";
+        done++; x.ok = true; x.st = "Criado";
       } catch (ex) {
         x.st = "Não importado";
         const el = $("imp-err"); if (el) el.textContent = ex.erro;
@@ -1233,7 +1248,7 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
   $("new").addEventListener("click", () => { if (canWriteNow()) openEdit(null); });
   qEl.addEventListener("input", render);
   $("clear").addEventListener("click", () => { qEl.value = ""; render(); qEl.focus(); });
-  $("sort").addEventListener("change", e => { sortBy = e.target.value; try { localStorage.setItem("bib-sort", sortBy); } catch (x) {} render(); });
+  $("sort").addEventListener("change", e => { sortBy = e.target.value; try { localStorage.setItem("bib-ordem", sortBy); } catch (x) {} render(); });
   function syncSeg() { document.querySelectorAll(".seg button[data-t]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.t === testament))); }
   document.querySelectorAll(".seg button[data-t]").forEach(b => b.addEventListener("click", () => { testament = b.dataset.t; syncSeg(); render(); }));
   $("tab-busca").addEventListener("click", () => { setMode("busca"); qEl.focus(); });
