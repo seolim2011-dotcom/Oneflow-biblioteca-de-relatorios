@@ -15,9 +15,9 @@ img { max-width: 100%; }
   --accent-soft: #DCEBF8;
   --sky: #7FB8E6;
   --focus: #2F6FB8;
-  --font-read: "Literata", Georgia, "Times New Roman", serif;
-  --font-ui: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-ref: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  --font-read: "DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-ui: "DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-ref: "DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -277,3 +277,9 @@ fieldset.opts legend { font-size: 13px; font-weight: 600; padding: 0; margin-bot
 .tagfilter #tq { flex: 1 1 auto; width: 118px; min-width: 0; border: 0; border-radius: 0; background: none; padding: 0; box-shadow: none; -webkit-appearance: none; appearance: none; font-size: 13px; }
 .tagfilter #tq:focus { box-shadow: none; outline: none; }
 @media (max-width: 560px) { .tagfilter #tq { width: 100%; } }
+
+/* DM Sans em todo o site: títulos um pouco mais firmes e justos */
+h1, .card h2, .read h2, .login-card h1 { font-weight: 700; letter-spacing: -0.02em; }
+.card h2 { letter-spacing: -0.01em; }
+.prose { font-size: 16.5px; }
+.num, .stats, .count, .tag .n, .dates { font-variant-numeric: tabular-nums; }
