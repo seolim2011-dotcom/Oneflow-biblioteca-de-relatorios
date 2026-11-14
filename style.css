@@ -289,12 +289,11 @@ h1, .card h2, .read h2, .login-card h1 { font-weight: 700; letter-spacing: -0.02
   .wrap { padding-block: 14px 48px; gap: 20px; }
 
   /* Topo: conta + links numa linha, área (usuário/admin) embaixo, de ponta a ponta */
-  .topbar { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "acc pass out" "area area area"; align-items: center; column-gap: 14px; row-gap: 12px; padding-bottom: 12px; min-height: 0; }
+  .topbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "acc cfg" "area area"; align-items: center; column-gap: 14px; row-gap: 12px; padding-bottom: 12px; min-height: 0; }
   .top-right { display: contents; }
   .account { grid-area: acc; min-width: 0; }
   .who strong, .who .role { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #changepass { grid-area: pass; font-size: 13px; padding: 4px 0; }
-  #logout { grid-area: out; font-size: 13px; padding: 4px 0; }
+  #settings { grid-area: cfg; }
   #areaseg, #areainfo { grid-area: area; }
   #areaseg { display: grid; grid-template-columns: 1fr 1fr; }
   #areaseg button { padding: 9px 8px; font-size: 14px; }
@@ -394,3 +393,71 @@ h1, .card h2, .read h2, .login-card h1 { font-weight: 700; letter-spacing: -0.02
   .card .mini { font-size: 11px; }
 }
 @media (max-width: 340px) { .grid, .grid[class] { grid-template-columns: 1fr; } }
+
+/* ============ Configurações ============ */
+.settings-btn { gap: 6px; }
+.loginlinks { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
+.settings { display: flex; flex-direction: column; gap: 26px; }
+.settings section { display: flex; flex-direction: column; gap: 14px; }
+.settings h3 { margin: 0; font-size: 12.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+.settings section + section { border-top: 1px solid var(--line); padding-top: 22px; }
+.flabel { font-size: 13px; font-weight: 600; }
+.segfull { display: flex; width: 100%; }
+.segfull button { flex: 1; padding: 9px 8px; font-size: 14px; }
+.seg button[aria-checked="true"] { background: var(--ink); color: var(--surface); }
+.cfg-note { margin: -6px 0 0; font-size: 13px; color: var(--muted); }
+.switch { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: start; cursor: pointer; position: relative; }
+.switch input { position: absolute; opacity: 0; width: 44px; height: 26px; margin: 0; cursor: pointer; }
+.switch .track { width: 44px; height: 26px; border-radius: 999px; background: var(--line); position: relative; transition: background .15s; flex: none; }
+.switch .track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: var(--surface); box-shadow: 0 1px 2px rgba(0, 0, 0, .25); transition: transform .15s; }
+.switch input:checked + .track { background: var(--accent); }
+.switch input:checked + .track::after { transform: translateX(18px); }
+.switch input:focus-visible + .track { outline: 2px solid var(--focus); outline-offset: 2px; }
+.switch input:disabled + .track { opacity: .5; }
+.switch .txt { display: flex; flex-direction: column; gap: 2px; }
+.switch .txt strong { font-size: 14.5px; font-weight: 600; }
+.switch .txt small { font-size: 13px; color: var(--muted); }
+.acct { display: flex; align-items: center; gap: 12px; }
+.acct .who span { font-size: 13px; color: var(--muted); }
+.acct-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 640px) { .acct-actions .btn { flex: 1; justify-content: center; } }
+
+/* ---- Tamanho do texto ---- */
+:root[data-fonte="grande"] body { zoom: 1.12; }
+:root[data-fonte="maior"] body { zoom: 1.25; }
+
+/* ---- Espaçamento de leitura ---- */
+:root[data-espaco="sim"] body { letter-spacing: .02em; word-spacing: .12em; }
+:root[data-espaco="sim"] p, :root[data-espaco="sim"] .resumo, :root[data-espaco="sim"] .card h2, :root[data-espaco="sim"] .hint { line-height: 1.75; }
+:root[data-espaco="sim"] .prose { line-height: 2; }
+:root[data-espaco="sim"] .prose p, :root[data-espaco="sim"] .prose li { margin-bottom: 18px; }
+
+/* ---- Reduzir animações ---- */
+:root[data-movimento="reduzido"] *, :root[data-movimento="reduzido"] *::before, :root[data-movimento="reduzido"] *::after {
+  transition: none !important; animation: none !important; scroll-behavior: auto !important;
+}
+:root[data-movimento="reduzido"] .card:hover { transform: none; }
+
+/* ---- Foco do teclado bem visível ---- */
+:root[data-foco="forte"] :focus-visible { outline: 3px solid var(--focus) !important; outline-offset: 3px !important; box-shadow: 0 0 0 7px var(--accent-soft) !important; }
+
+/* ---- Alto contraste (claro e escuro) ---- */
+:root[data-contraste="alto"] { --ink: #000814; --muted: #1f2d42; --line: #4d5d74; --accent: #0b2a55; --accent-soft: #c6dcf5; --paper: #f4f6f8; }
+@media (prefers-color-scheme: dark) {
+  :root[data-contraste="alto"]:not([data-theme="light"]) { --paper: #000a14; --surface: #0b1626; --ink: #ffffff; --muted: #d2dbe6; --line: #8aa0bb; --accent: #a9d6ff; --accent-soft: #23466f; }
+}
+:root[data-contraste="alto"][data-theme="dark"] { --paper: #000a14; --surface: #0b1626; --ink: #ffffff; --muted: #d2dbe6; --line: #8aa0bb; --accent: #a9d6ff; --accent-soft: #23466f; }
+:root[data-contraste="alto"] .card, :root[data-contraste="alto"] .btn, :root[data-contraste="alto"] .tagbar,
+:root[data-contraste="alto"] dialog, :root[data-contraste="alto"] .login-card, :root[data-contraste="alto"] #q { border-width: 2px; }
+:root[data-contraste="alto"] .tag { border-color: var(--line); }
+:root[data-contraste="alto"] .linkbtn, :root[data-contraste="alto"] a { text-decoration-thickness: 2px; text-underline-offset: 3px; }
+:root[data-contraste="alto"] .tabs button[aria-selected="true"] { border-bottom-width: 3px; }
+/* Com o texto ampliado, as janelas continuam cabendo na tela */
+:root[data-fonte="grande"] { --z: 1.12; }
+:root[data-fonte="maior"] { --z: 1.25; }
+dialog { width: min(760px, calc((100vw - 24px) / var(--z, 1))); max-height: calc((100dvh - 32px) / var(--z, 1)); }
+.dlg { max-height: calc((100dvh - 34px) / var(--z, 1)); }
+@media (max-width: 640px) {
+  dialog { width: calc(100vw / var(--z, 1)); max-width: calc(100vw / var(--z, 1)); height: calc(100dvh / var(--z, 1)); max-height: calc(100dvh / var(--z, 1)); }
+  .dlg { height: calc(100dvh / var(--z, 1)); max-height: calc(100dvh / var(--z, 1)); }
+}

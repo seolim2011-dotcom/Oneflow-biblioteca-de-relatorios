@@ -12,7 +12,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap">
-<link rel="stylesheet" href="style.css?v=202611141745">
+<script src="prefs.js?v=202611141752"></script>
+<link rel="stylesheet" href="style.css?v=202611141752">
 </head>
 <body>
 
@@ -35,7 +36,10 @@
       <div class="msg" id="login-msg" role="alert"></div>
       <button class="btn primary" id="login-btn" type="submit">Entrar</button>
     </form>
-    <button class="linkbtn" id="forgot" type="button">Esqueci minha senha</button>
+    <div class="loginlinks">
+      <button class="linkbtn" id="forgot" type="button">Esqueci minha senha</button>
+      <button class="linkbtn" id="login-a11y" type="button">Acessibilidade e tema</button>
+    </div>
   </div>
 </div>
 
@@ -83,8 +87,10 @@
         <button type="button" data-area="usuario" aria-pressed="false">Área do usuário</button>
         <button type="button" data-area="admin" aria-pressed="false">Área do admin</button>
       </div>
-      <button class="linkbtn" id="changepass" type="button">Alterar senha</button>
-      <button class="linkbtn" id="logout" type="button">Sair</button>
+      <button class="btn sm settings-btn" id="settings" type="button" aria-haspopup="dialog">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span>Configurações</span>
+      </button>
     </div>
   </div>
 
@@ -173,6 +179,6 @@
 <dialog id="dlg" aria-label="Roteiro"><div class="dlg" id="dlg-inner"></div></dialog>
 <div class="toast" id="toast" role="status" hidden></div>
 
-<script src="app.js?v=202611141745"></script>
+<script src="app.js?v=202611141752"></script>
 </body>
 </html>

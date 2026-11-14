@@ -193,11 +193,105 @@
       btn.disabled = false;
     }
   });
-  $("logout").addEventListener("click", async () => {
-    try { const r = await api("sair", { body: {} }); csrf = r.csrf || csrf; } catch (e) {}
+  async function logout() {
+    try { await api("sair", { body: {} }); } catch (e) {}
     onUser(null); toast("Você saiu da biblioteca");
+  }
+  $("settings").addEventListener("click", openSettings);
+  $("login-a11y").addEventListener("click", openSettings);
+
+  // ---------- Configurações: aparência, acessibilidade e conta ----------
+  const Prefs = window.BibPrefs || { get: () => ({}), set() {}, reset() {} };
+  const temVoz = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+  function openSettings() {
+    openId = null; ++pdfToken; pararVoz();
+    const p = Prefs.get();
+    const grupo = (key, padrao, label, opcoes) => `
+      <div class="field"><span class="flabel" id="lb-${key}">${label}</span>
+        <div class="seg segfull" role="radiogroup" aria-labelledby="lb-${key}">${opcoes.map(([v, t]) =>
+          `<button type="button" role="radio" aria-checked="${(p[key] || padrao) === v}" data-pref="${key}" data-val="${v}">${t}</button>`).join("")}</div>
+      </div>`;
+    const chave = (key, titulo, desc, extra = "") => `
+      <label class="switch">
+        <input type="checkbox" data-pref-bool="${key}"${p[key] ? " checked" : ""}${extra}>
+        <span class="track" aria-hidden="true"></span>
+        <span class="txt"><strong>${titulo}</strong><small>${desc}</small></span>
+      </label>`;
+    inner.innerHTML = `
+      <div class="dlg-head"><strong>Configurações</strong><button class="x" type="button" data-act="close" aria-label="Fechar">×</button></div>
+      <div class="dlg-body settings">
+        <section aria-labelledby="cfg-aparencia">
+          <h3 id="cfg-aparencia">Aparência</h3>
+          ${grupo("tema", "auto", "Tema", [["auto", "Automático"], ["claro", "Claro"], ["escuro", "Escuro"]])}
+          <p class="cfg-note">No automático, o site segue o modo claro ou escuro do seu aparelho.</p>
+        </section>
+        <section aria-labelledby="cfg-acess">
+          <h3 id="cfg-acess">Acessibilidade</h3>
+          ${grupo("fonte", "normal", "Tamanho do texto", [["normal", "Normal"], ["grande", "Grande"], ["maior", "Muito grande"]])}
+          ${chave("contraste", "Alto contraste", "Cores mais fortes, bordas mais grossas e links sublinhados.")}
+          ${chave("espaco", "Espaçamento de leitura", "Mais espaço entre letras, palavras e linhas. Ajuda pessoas com dislexia.")}
+          ${chave("movimento", "Reduzir animações", "Tira movimentos e transições da tela.")}
+          ${chave("foco", "Destacar o foco do teclado", "Contorno grosso no item selecionado ao navegar com a tecla Tab.")}
+          ${chave("voz", "Ouvir roteiros em voz alta", temVoz ? "Mostra o botão “Ouvir” em cada roteiro, que lê o texto para você." : "Este navegador não tem leitura em voz alta.", temVoz ? "" : " disabled")}
+          <button class="linkbtn" type="button" data-act="prefs-reset">Voltar tudo ao padrão</button>
+        </section>
+        ${me ? `<section aria-labelledby="cfg-conta">
+          <h3 id="cfg-conta">Conta</h3>
+          <div class="acct"><span class="avatar-i" aria-hidden="true">${esc((me.nome || me.email || "?")[0])}</span>
+            <span class="who"><strong>${esc(me.nome || me.email)}</strong><span>${esc(me.email)} · ${me.is_admin ? "Administrador" : "Leitor"}</span></span></div>
+          <div class="acct-actions">
+            <button class="btn" type="button" data-act="changepass">Alterar senha</button>
+            <button class="btn danger" type="button" data-act="logout">Sair da conta</button>
+          </div>
+        </section>` : ""}
+      </div>
+      <div class="dlg-foot"><span class="dates">As preferências ficam salvas neste aparelho.</span><span><button class="btn primary" type="button" data-act="close">Pronto</button></span></div>`;
+    if (!dlg.open) dlg.showModal();
+    inner.querySelector('[data-pref="tema"][aria-checked="true"]')?.focus();
+  }
+  document.addEventListener("change", e => {
+    const k = e.target.dataset?.prefBool;
+    if (!k) return;
+    Prefs.set(k, e.target.checked);
+    if (k === "voz" && !e.target.checked) pararVoz();
   });
-  $("changepass").addEventListener("click", openPass);
+
+  // ---------- Ouvir o roteiro em voz alta ----------
+  let falando = false;
+  function textoParaOuvir(it) {
+    const corpo = String(it.roteiro || it.textoPdf || "")
+      .replace(/^#{1,3}\s+/gm, "").replace(/\*\*|__/g, "").replace(/^>\s?/gm, "")
+      .replace(/^[-•*]\s+/gm, "").replace(/[[\]]/g, "");
+    return [it.titulo, it.passagem, it.resumo, corpo].filter(Boolean).join(".\n");
+  }
+  function ouvir(btn) {
+    if (falando) { pararVoz(); return; }
+    const it = items.find(x => x.id === openId);
+    if (!it || !temVoz) return;
+    // Em blocos curtos: alguns navegadores param de ler frases muito longas
+    const partes = textoParaOuvir(it).split(/\n+|(?<=[.!?;:])\s+/).map(t => t.trim()).filter(Boolean);
+    const blocos = [];
+    let atual = "";
+    partes.forEach(t => { if (atual && (atual + " " + t).length > 220) { blocos.push(atual); atual = t; } else atual = atual ? atual + " " + t : t; });
+    if (atual) blocos.push(atual);
+    speechSynthesis.cancel();
+    const vozes = speechSynthesis.getVoices();
+    const voz = vozes.find(v => /^pt[-_]BR/i.test(v.lang)) || vozes.find(v => /^pt/i.test(v.lang));
+    falando = true;
+    btn.textContent = "Parar"; btn.setAttribute("aria-pressed", "true");
+    blocos.forEach((b, i) => {
+      const u = new SpeechSynthesisUtterance(b);
+      u.lang = "pt-BR"; if (voz) u.voice = voz;
+      if (i === blocos.length - 1) u.onend = pararVoz;
+      speechSynthesis.speak(u);
+    });
+  }
+  function pararVoz() {
+    if (temVoz) speechSynthesis.cancel();
+    falando = false;
+    const b = document.querySelector('[data-act="ouvir"]');
+    if (b) { b.textContent = "Ouvir"; b.setAttribute("aria-pressed", "false"); }
+  }
 
   // ---------- Aceitar convite ----------
   let inviteToken = null;
@@ -569,6 +663,7 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
   function openRead(id) {
     const it = items.find(x => x.id === id);
     if (!it) return;
+    if (openId !== id) pararVoz();
     openId = id;
     const writable = canWriteNow();
     inner.innerHTML = `
@@ -583,7 +678,7 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
       </div>
       <div class="dlg-foot">
         <span class="dates">${it.criadoEm ? "Criado em " + esc(fmtDate(it.criadoEm)) : ""}${it.atualizadoEm && it.atualizadoEm !== it.criadoEm ? " · editado em " + esc(fmtDate(it.atualizadoEm)) : ""}</span>
-        <span style="display:flex;flex-wrap:wrap;gap:8px">${writable ? `<button class="btn danger" type="button" data-act="del">Excluir</button><button class="btn" type="button" data-act="edit">Editar</button>` : ""}<button class="btn primary" type="button" data-act="download">Baixar PDF</button></span>
+        <span style="display:flex;flex-wrap:wrap;gap:8px">${writable ? `<button class="btn danger" type="button" data-act="del">Excluir</button><button class="btn" type="button" data-act="edit">Editar</button>` : ""}${temVoz && Prefs.get().voz ? '<button class="btn" type="button" data-act="ouvir" aria-pressed="false">Ouvir</button>' : ""}<button class="btn primary" type="button" data-act="download">Baixar PDF</button></span>
       </div>`;
     if (!dlg.open) dlg.showModal();
     inner.querySelector(".dlg-body").scrollTop = 0;
@@ -710,7 +805,7 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
   }
 
   function closeDlg() { openId = null; if (dlg.open) dlg.close(); }
-  dlg.addEventListener("close", () => { openId = null; ++pdfToken; try { if (/^#r-/.test(location.hash)) history.replaceState(null, "", location.pathname + location.search); } catch (e) {} });
+  dlg.addEventListener("close", () => { openId = null; ++pdfToken; pararVoz(); try { if (/^#r-/.test(location.hash)) history.replaceState(null, "", location.pathname + location.search); } catch (e) {} });
   dlg.addEventListener("click", e => { if (e.target === dlg) closeDlg(); });
 
   let toastT;
@@ -1185,6 +1280,12 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
       else toggleTag(tagBtn.dataset.tag);
       return;
     }
+    const prefBtn = e.target.closest("[data-pref]");
+    if (prefBtn) {
+      Prefs.set(prefBtn.dataset.pref, prefBtn.dataset.val);
+      prefBtn.parentElement.querySelectorAll("[data-pref]").forEach(b => b.setAttribute("aria-checked", String(b === prefBtn)));
+      return;
+    }
     const monthBtn = e.target.closest("[data-month]");
     if (monthBtn) { const [y, m] = monthBtn.dataset.month.split("-").map(Number); setRange(...monthBounds(y, m - 1)); return; }
     const quickBtn = e.target.closest("[data-quick]");
@@ -1200,6 +1301,10 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
     else if (act === "back") openRead(openId);
     else if (act === "del") { if (canWriteNow()) del(actEl); }
     else if (act === "download") baixar(actEl);
+    else if (act === "ouvir") ouvir(actEl);
+    else if (act === "changepass") openPass();
+    else if (act === "logout") { closeDlg(); logout(); }
+    else if (act === "prefs-reset") { Prefs.reset(); pararVoz(); openSettings(); toast("Preferências voltaram ao padrão"); }
     else if (act === "cleardates") { dateFrom = ""; dateTo = ""; render(); }
     else if (act === "clear") { qEl.value = ""; selTags.clear(); testament = ""; dateFrom = ""; dateTo = ""; syncSeg(); render(); }
     else if (act === "cleartags") { selTags.clear(); render(); }
