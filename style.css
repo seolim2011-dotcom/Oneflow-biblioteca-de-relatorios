@@ -383,9 +383,20 @@ h1, .card h2, .read h2, .login-card h1 { font-weight: 700; letter-spacing: -0.02
 .mtitle span { font-size: 12.5px; font-weight: 500; color: var(--muted); text-transform: none; }
 .mtitle::after { content: ""; flex: 1; height: 1px; background: var(--line); align-self: center; }
 
-/* Lista em uma coluna só (sem dividir em colunas) */
-.grid, .grid[class] { grid-template-columns: 1fr; gap: 10px; }
-.card { padding: 16px 20px; gap: 6px; }
-.card h2 { font-size: 18px; }
-.card .resumo { -webkit-line-clamp: 2; }
-.card .mini { padding-top: 2px; }
+/* Roteiros em quadros lado a lado, todos da mesma altura em cada linha */
+.grid, .grid[class] { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; align-items: stretch; }
+.card { height: 100%; min-height: 168px; padding: 18px; gap: 8px; }
+.card h2 { font-size: 18px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.card .resumo { -webkit-line-clamp: 3; }
+.card .mini { margin-top: auto; }
+@media (max-width: 640px) {
+  /* No celular: dois quadros por linha, mais compactos */
+  .grid, .grid[class] { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .card { min-height: 150px; padding: 13px; gap: 6px; }
+  .card .card-top { flex-wrap: wrap; row-gap: 2px; font-size: 11px; }
+  .card h2 { font-size: 15.5px; }
+  .card .ref { font-size: 12px; }
+  .card .resumo { display: none; }
+  .card .mini { font-size: 11px; }
+}
+@media (max-width: 340px) { .grid, .grid[class] { grid-template-columns: 1fr; } }
