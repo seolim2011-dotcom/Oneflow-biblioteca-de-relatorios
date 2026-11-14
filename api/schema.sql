@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS roteiros (
   passagem      VARCHAR(120) NOT NULL DEFAULT '',
   tags          TEXT         NOT NULL,
   resumo        VARCHAR(400) NOT NULL DEFAULT '',
+  data_celula   DATE         NULL,
   roteiro       MEDIUMTEXT   NOT NULL,
   pdf_arquivo   VARCHAR(64)  NULL,
   pdf_nome      VARCHAR(255) NULL,

@@ -164,6 +164,7 @@ function roteiro_out(array $r): array
         'passagem' => $r['passagem'],
         'tags' => is_array($tags) ? array_values($tags) : [],
         'resumo' => $r['resumo'],
+        'data' => $r['data_celula'] ?? null,
         'roteiro' => $r['roteiro'],
         'texto_pdf' => $r['texto_pdf'],
         'pdf' => $r['pdf_arquivo'] ? [
@@ -300,12 +301,14 @@ switch ($action) {
 
     case 'roteiros':
         require_user();
+        ensure_data_celula();
         $rows = db()->query('SELECT * FROM roteiros ORDER BY id')->fetchAll();
         out(['roteiros' => array_map('roteiro_out', $rows)]);
 
     case 'roteiro_salvar':
         require_post();
         require_admin();
+        ensure_data_celula();
         $id = int_in('id');
         $prev = $id ? find_roteiro($id) : null;
         if ($id && !$prev) fail('Este roteiro não existe mais.', 404);
@@ -316,8 +319,14 @@ switch ($action) {
             'passagem' => str_in('passagem', 120),
             'tags' => json_encode(parse_tags(), JSON_UNESCAPED_UNICODE),
             'resumo' => str_in('resumo', 400),
+            'data_celula' => null,
             'roteiro' => text_cut(rtrim(raw_in('roteiro')), 200000),
         ];
+        $data = str_in('data', 10);
+        if ($data !== '') {
+            $dados['data_celula'] = valid_ymd($data);
+            if ($dados['data_celula'] === null) fail('A data da célula não é válida.', 422);
+        }
         $novo = save_uploaded_pdf();
         $remover = !$novo && str_in('remover_pdf') === '1';
         if ($novo) {

@@ -231,3 +231,21 @@ function install_locked(): bool
     if ($tem && $lock) @file_put_contents($lock, date(DATE_ATOM));
     return $tem;
 }
+
+// Data da célula (dia do encontro): coluna criada sozinha em bibliotecas instaladas antes dela
+function ensure_data_celula(): void
+{
+    static $ok = false;
+    if ($ok) return;
+    if (!db()->query("SHOW COLUMNS FROM roteiros LIKE 'data_celula'")->fetch()) {
+        db()->exec('ALTER TABLE roteiros ADD COLUMN data_celula DATE NULL AFTER resumo');
+    }
+    $ok = true;
+}
+
+// Aceita só AAAA-MM-DD de um dia que existe; vazio vira null
+function valid_ymd(string $s): ?string
+{
+    if (!preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $s, $m)) return null;
+    return checkdate((int) $m[2], (int) $m[3], (int) $m[1]) && (int) $m[1] >= 1900 && (int) $m[1] <= 2200 ? $s : null;
+}

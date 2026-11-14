@@ -75,7 +75,7 @@
   // ---------- Estado ----------
   let me = null, started = false, isAdmin = false, area = "usuario", readOnly = false;
   let items = [], loaded = false, loadNote = "", lastLoad = 0, firstHash = true;
-  let testament = "", sortBy = "recentes", mode = "busca", selTags = new Set(), tagsOpen = false;
+  let testament = "", sortBy = "recentes", mode = "busca", selTags = new Set(), tagsOpen = false, dateFrom = "", dateTo = "";
   try { sortBy = localStorage.getItem("bib-sort") || "recentes"; } catch (e) {}
   const canWriteNow = () => isAdmin && area === "admin" && !readOnly;
 
@@ -84,13 +84,30 @@
 
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const pad = n => "Nº " + String(n || 0).padStart(3, "0");
+  const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+  // Data do roteiro: o dia da célula, ou o dia em que foi cadastrado quando não houver
+  const effDate = it => it.data || (it.criadoEm ? String(it.criadoEm).slice(0, 10) : "");
+  const fmtDia = d => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d || ""); return m ? `${m[3]}/${m[2]}/${m[1]}` : ""; };
+  const fmtMes = ym => { const [y, mo] = String(ym).split("-"); return `${MESES[+mo - 1] || ""} ${y}`; };
+  const ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const monthBounds = (y, m) => [ymd(new Date(y, m, 1)), ymd(new Date(y, m + 1, 0))]; // m começa em 0
+  // Data no nome do arquivo: "06-11-2026", "06.11.2026", "06/11/2026" ou "2026-11-06"
+  function dateFromName(name) {
+    const s = String(name || "");
+    let m = /(\d{1,2})[-_. /](\d{1,2})[-_. /](\d{4})/.exec(s), d, mo, y;
+    if (m) { d = +m[1]; mo = +m[2]; y = +m[3]; }
+    else if ((m = /(\d{4})[-_.](\d{1,2})[-_.](\d{1,2})/.exec(s))) { y = +m[1]; mo = +m[2]; d = +m[3]; }
+    else return "";
+    const dt = new Date(y, mo - 1, d);
+    return dt.getFullYear() === y && dt.getMonth() === mo - 1 && dt.getDate() === d ? ymd(dt) : "";
+  }
   const fmtDate = iso => { try { return new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" }); } catch (e) { return ""; } };
   const parseTags = s => [...new Set(String(s || "").split(/[\s,;]+/).map(t => t.replace(/^#+/, "").trim().toLowerCase()).filter(Boolean))];
 
   const fromRow = r => {
     const it = {
       id: String(r.id), numero: r.numero, titulo: r.titulo || "", passagem: r.passagem || "", tags: r.tags || [],
-      resumo: r.resumo || "", roteiro: r.roteiro || "", textoPdf: r.texto_pdf || "",
+      resumo: r.resumo || "", data: r.data || "", roteiro: r.roteiro || "", textoPdf: r.texto_pdf || "",
       criadoEm: r.criado_em, atualizadoEm: r.atualizado_em,
       pdf: r.pdf ? { nome: r.pdf.nome, tamanho: r.pdf.tamanho, paginas: r.pdf.paginas } : null
     };
@@ -282,6 +299,12 @@
   }
   function matches(it, pq) {
     if (testament && it._p?.t !== testament) return false;
+    if (mode === "datas") {
+      const d = effDate(it);
+      if (dateFrom && (!d || d < dateFrom)) return false;
+      if (dateTo && (!d || d > dateTo)) return false;
+      return true;
+    }
     if (mode === "temas") {
       for (const t of selTags) if (!(it.tags || []).includes(t)) return false;
       return true;
@@ -289,7 +312,7 @@
     if (pq.nums.length && !pq.nums.includes(+it.numero)) return false;
     for (const t of pq.tags) if (!(it.tags || []).some(tag => norm(tag).startsWith(t))) return false;
     if (pq.words.length) {
-      const hay = norm([it.titulo, it.passagem, it._p?.book, BOOKS[it._p?.idx]?.[1], it.resumo, it.roteiro, it.textoPdf].join(" "));
+      const hay = norm([it.titulo, it.passagem, it._p?.book, BOOKS[it._p?.idx]?.[1], it.resumo, it.roteiro, it.textoPdf, fmtDia(effDate(it)), effDate(it) ? fmtMes(effDate(it).slice(0, 7)) : ""].join(" "));
       for (const w of pq.words) if (!hay.includes(w)) return false;
     }
     return true;
@@ -319,7 +342,7 @@
   function sorted(list, pq) {
     const arr = list.slice();
     const cmp = {
-      recentes: (a, b) => String(b.criadoEm || "").localeCompare(String(a.criadoEm || "")),
+      recentes: (a, b) => (effDate(b) + String(b.criadoEm || "")).localeCompare(effDate(a) + String(a.criadoEm || "")),
       nome: (a, b) => String(a.titulo || "").localeCompare(String(b.titulo || ""), "pt-BR"),
       numero: (a, b) => (a.numero || 0) - (b.numero || 0),
       biblica: (a, b) => ((a._p?.idx ?? 99) - (b._p?.idx ?? 99)) || ((a._p?.ch || 0) - (b._p?.ch || 0)) || ((a._p?.v || 0) - (b._p?.v || 0))
@@ -347,6 +370,7 @@
       : `${items.length} ${items.length === 1 ? "roteiro" : "roteiros"} · ${counts.size} ${counts.size === 1 ? "tema" : "temas"}`;
     selTags.forEach(t => { if (loaded && !counts.has(t)) selTags.delete(t); });
     renderTags(counts);
+    renderDates();
 
     if (!loaded) {
       listEl.innerHTML = `<div class="empty"><strong>${esc(loadNote || "Carregando roteiros…")}</strong></div>`;
@@ -366,7 +390,7 @@
     }
     listEl.innerHTML = `<div class="grid">${shown.map(it => `
       <button type="button" class="card" data-id="${esc(it.id)}">
-        <span class="card-top"><span class="num">${pad(it.numero)}</span><span class="right">${it.pdf ? '<span class="pdfbadge">PDF</span>' : ""}<span class="testament">${it._p ? (it._p.t === "AT" ? "ANTIGO T." : "NOVO T.") : ""}</span></span></span>
+        <span class="card-top"><span class="num">${pad(it.numero)}${effDate(it) ? ` <span class="cdate">· ${fmtDia(effDate(it))}</span>` : ""}</span><span class="right">${it.pdf ? '<span class="pdfbadge">PDF</span>' : ""}<span class="testament">${it._p ? (it._p.t === "AT" ? "ANTIGO T." : "NOVO T.") : ""}</span></span></span>
         <h2>${highlight(it.titulo, pq.words)}</h2>
         ${it.passagem ? `<span class="ref">${highlight(it.passagem, pq.words)}</span>` : ""}
         ${it.resumo ? `<p class="resumo">${highlight(it.resumo, pq.words)}</p>` : it.textoPdf ? `<p class="resumo">${highlight(it.textoPdf.slice(0, 220), pq.words)}</p>` : ""}
@@ -402,15 +426,54 @@
     } else more.hidden = true;
   }
 
+  function quickRanges() {
+    const t = new Date(), y = t.getFullYear(), m = t.getMonth();
+    return {
+      mes: monthBounds(y, m),
+      passado: monthBounds(y, m - 1),
+      tres: [ymd(new Date(y, m - 2, 1)), ymd(new Date(y, m + 1, 0))],
+      ano: [`${y}-01-01`, `${y}-12-31`]
+    };
+  }
+  function setRange(a, b) {
+    if (dateFrom === a && dateTo === b) { dateFrom = ""; dateTo = ""; } else { dateFrom = a; dateTo = b; }
+    render();
+  }
+  function renderDates() {
+    const box = $("dmonths"); if (!box) return;
+    const counts = new Map();
+    items.forEach(it => { const d = effDate(it); if (d) counts.set(d.slice(0, 7), (counts.get(d.slice(0, 7)) || 0) + 1); });
+    const months = [...counts.keys()].sort().reverse();
+    box.innerHTML = months.length ? months.map(ym => {
+      const [y, m] = ym.split("-").map(Number);
+      const [a, b] = monthBounds(y, m - 1);
+      const on = dateFrom === a && dateTo === b;
+      return `<button type="button" class="tag${on ? " on" : ""}" data-month="${esc(ym)}" aria-pressed="${on}">${esc(fmtMes(ym))}<span class="n">${counts.get(ym)}</span></button>`;
+    }).join("") : `<span class="tagempty">Os meses aparecem aqui assim que houver roteiros.</span>`;
+    const q = quickRanges();
+    document.querySelectorAll("[data-quick]").forEach(b => {
+      const [a, z] = q[b.dataset.quick];
+      const on = dateFrom === a && dateTo === z;
+      b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on));
+    });
+    if ($("dfrom").value !== dateFrom) $("dfrom").value = dateFrom;
+    if ($("dto").value !== dateTo) $("dto").value = dateTo;
+    const faixa = dateFrom && dateTo ? `de <strong>${fmtDia(dateFrom)}</strong> a <strong>${fmtDia(dateTo)}</strong>`
+      : dateFrom ? `a partir de <strong>${fmtDia(dateFrom)}</strong>` : `até <strong>${fmtDia(dateTo)}</strong>`;
+    $("dsel").innerHTML = dateFrom || dateTo
+      ? `Mostrando roteiros ${faixa} · <button type="button" class="linkbtn" data-act="cleardates">limpar</button>`
+      : "Escolha um mês, um período rápido ou um intervalo de datas.";
+  }
+
+  const MODES = ["busca", "temas", "datas"];
   function setMode(m) {
-    mode = m;
-    $("tab-busca").setAttribute("aria-selected", String(m === "busca"));
-    $("tab-temas").setAttribute("aria-selected", String(m === "temas"));
-    $("tab-busca").tabIndex = m === "busca" ? 0 : -1;
-    $("tab-temas").tabIndex = m === "temas" ? 0 : -1;
-    $("panel-busca").hidden = m !== "busca";
-    $("panel-temas").hidden = m !== "temas";
-    try { localStorage.setItem("bib-mode", m); } catch (e) {}
+    mode = MODES.includes(m) ? m : "busca";
+    MODES.forEach(k => {
+      $("tab-" + k).setAttribute("aria-selected", String(k === mode));
+      $("tab-" + k).tabIndex = k === mode ? 0 : -1;
+      $("panel-" + k).hidden = k !== mode;
+    });
+    try { localStorage.setItem("bib-mode", mode); } catch (e) {}
     render();
   }
 
@@ -508,7 +571,7 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
     openId = id;
     const writable = canWriteNow();
     inner.innerHTML = `
-      <div class="dlg-head"><span class="num" style="font-family:var(--font-ref);font-size:13px">${pad(it.numero)}${it._p ? ` · ${it._p.t === "AT" ? "Antigo Testamento" : "Novo Testamento"}` : ""}</span><button class="x" type="button" data-act="close" aria-label="Fechar">×</button></div>
+      <div class="dlg-head"><span class="num" style="font-family:var(--font-ref);font-size:13px">${pad(it.numero)}${effDate(it) ? " · " + fmtDia(effDate(it)) : ""}${it._p ? ` · ${it._p.t === "AT" ? "Antigo Testamento" : "Novo Testamento"}` : ""}</span><button class="x" type="button" data-act="close" aria-label="Fechar">×</button></div>
       <div class="dlg-body read">
         <h2>${esc(it.titulo)}</h2>
         ${it.passagem ? `<div class="ref">${esc(it.passagem)}</div>` : ""}
@@ -540,8 +603,9 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
         <div class="field"><label for="f-titulo">Título</label><input id="f-titulo" required maxlength="140" value="${esc(it?.titulo)}" placeholder="Ex.: O Bom Samaritano"></div>
         <div class="row2">
           <div class="field"><label for="f-passagem">Passagem <small>livro capítulo:versículos</small></label><input id="f-passagem" maxlength="120" value="${esc(it?.passagem)}" placeholder="Ex.: Lucas 10:25-37"></div>
-          <div class="field"><label for="f-tags">Temas <small>separe com espaço</small></label><input id="f-tags" maxlength="300" value="${esc((it?.tags || []).map(t => "#" + t).join(" "))}" placeholder="#amor #próximo #parábolas"></div>
+          <div class="field"><label for="f-data">Data da célula <small>dia do encontro</small></label><input id="f-data" type="date" value="${esc(it ? (it.data || "") : ymd(new Date()))}"></div>
         </div>
+        <div class="field"><label for="f-tags">Temas <small>separe com espaço</small></label><input id="f-tags" maxlength="300" value="${esc((it?.tags || []).map(t => "#" + t).join(" "))}" placeholder="#amor #próximo #parábolas"></div>
         <div class="field"><label for="f-pdf">Roteiro pronto em PDF <small>opcional · até 20 MB · o texto do PDF entra na busca</small></label><div class="pdfbox" id="pdfbox"></div><input type="file" id="f-pdf" accept="application/pdf,.pdf" hidden></div>
         <div class="field"><label for="f-resumo">Resumo <small>uma ou duas frases</small></label><textarea id="f-resumo" rows="2" maxlength="400">${esc(it?.resumo)}</textarea></div>
         <div class="field">
@@ -572,6 +636,7 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
     if (prev) fd.append("id", prev.id);
     fd.append("titulo", titulo);
     fd.append("passagem", $("f-passagem").value.trim());
+    fd.append("data", $("f-data").value || "");
     fd.append("tags", JSON.stringify(parseTags($("f-tags").value)));
     fd.append("resumo", $("f-resumo").value.trim());
     const texto = $("f-roteiro").value.replace(/\s+$/, "");
@@ -685,7 +750,10 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
       return { text: out.replace(/[ \t]+/g, " ").replace(/ *\n */g, "\n").replace(/\n{3,}/g, "\n\n").trim().slice(0, 60000), pages: pdf.numPages };
     } finally { pdf.destroy(); }
   }
-  const titleFromFile = name => String(name || "").replace(/\.pdf$/i, "").replace(/[_]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 140) || "Roteiro em PDF";
+  const titleFromFile = name => String(name || "").replace(/\.pdf$/i, "").replace(/[_]+/g, " ")
+    .replace(/^\s*roteiro\s+(?:de\s+c[ée]lula\s+)?(?:one\s*flow)?\s*/i, "")
+    .replace(/\b\d{1,2}[-. /]\d{1,2}[-. /]\d{4}\b|\b\d{4}-\d{1,2}-\d{1,2}\b/g, "")
+    .replace(/^[\s\-–—·]+|[\s\-–—·]+$/g, "").replace(/\s+/g, " ").trim().slice(0, 140) || "Roteiro em PDF";
   const fmtSize = b => b >= 1048576 ? (b / 1048576).toFixed(1).replace(".", ",") + " MB" : Math.max(1, Math.round(b / 1024)) + " KB";
 
   function renderPdfBox() {
@@ -712,6 +780,8 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
     err.textContent = "";
     pdfDraft = { file, text: null, pages: null, remove: false, reading: true, note: "" };
     const t = $("f-titulo"); if (t && !t.value.trim()) t.value = titleFromFile(file.name);
+    const fdata = $("f-data"), dn = dateFromName(file.name);
+    if (fdata && dn && (!fdata.value || fdata.value === ymd(new Date()))) fdata.value = dn;
     renderPdfBox();
     try {
       const r = await readPdfFile(file);
@@ -781,7 +851,7 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
       y += gap;
     };
     const strip = s => s.replace(/\*\*(.+?)\*\*/g, "$1").replace(/(^|[^*])\*([^*]+)\*/g, "$1$2");
-    write(`${pad(it.numero)}  ·  Roteiros células One Flow`, { size: 9, color: BLUE, gap: 10 });
+    write(`${pad(it.numero)}${effDate(it) ? "  ·  " + fmtDia(effDate(it)) : ""}  ·  Roteiros células One Flow`, { size: 9, color: BLUE, gap: 10 });
     write(it.titulo, { size: 20, style: "bold", lh: 1.25 });
     if (it.passagem) write(it.passagem, { color: MUTED, gap: 8 });
     if (it.resumo) write(it.resumo, { size: 11.5, style: "italic", color: MUTED, gap: 8 });
@@ -1075,6 +1145,7 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
       try {
         const fd = new FormData();
         fd.append("titulo", titleFromFile(x.file.name));
+        fd.append("data", dateFromName(x.file.name));
         fd.append("tags", JSON.stringify(tags));
         fd.append("roteiro", "");
         fd.append("pdf", x.file, x.file.name);
@@ -1113,6 +1184,10 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
       else toggleTag(tagBtn.dataset.tag);
       return;
     }
+    const monthBtn = e.target.closest("[data-month]");
+    if (monthBtn) { const [y, m] = monthBtn.dataset.month.split("-").map(Number); setRange(...monthBounds(y, m - 1)); return; }
+    const quickBtn = e.target.closest("[data-quick]");
+    if (quickBtn) { setRange(...quickRanges()[quickBtn.dataset.quick]); return; }
     const card = e.target.closest(".card");
     if (card) { openRead(card.dataset.id); return; }
     const actEl = e.target.closest("[data-act]");
@@ -1124,7 +1199,8 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
     else if (act === "back") openRead(openId);
     else if (act === "del") { if (canWriteNow()) del(actEl); }
     else if (act === "download") baixar(actEl);
-    else if (act === "clear") { qEl.value = ""; selTags.clear(); testament = ""; syncSeg(); render(); }
+    else if (act === "cleardates") { dateFrom = ""; dateTo = ""; render(); }
+    else if (act === "clear") { qEl.value = ""; selTags.clear(); testament = ""; dateFrom = ""; dateTo = ""; syncSeg(); render(); }
     else if (act === "cleartags") { selTags.clear(); render(); }
     else if (act === "pdf-pick") $("f-pdf")?.click();
     else if (act === "pdf-remove") {
@@ -1162,8 +1238,15 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
   document.querySelectorAll(".seg button[data-t]").forEach(b => b.addEventListener("click", () => { testament = b.dataset.t; syncSeg(); render(); }));
   $("tab-busca").addEventListener("click", () => { setMode("busca"); qEl.focus(); });
   $("tab-temas").addEventListener("click", () => setMode("temas"));
+  $("tab-datas").addEventListener("click", () => setMode("datas"));
+  $("dfrom").addEventListener("change", e => { dateFrom = e.target.value || ""; if (dateFrom && dateTo && dateTo < dateFrom) dateTo = dateFrom; render(); });
+  $("dto").addEventListener("change", e => { dateTo = e.target.value || ""; if (dateFrom && dateTo && dateTo < dateFrom) dateFrom = dateTo; render(); });
   document.querySelector(".tabs").addEventListener("keydown", e => {
-    if (e.key === "ArrowRight" || e.key === "ArrowLeft") { e.preventDefault(); const m = mode === "busca" ? "temas" : "busca"; setMode(m); $("tab-" + m).focus(); }
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+      e.preventDefault();
+      const i = MODES.indexOf(mode), m = MODES[(i + (e.key === "ArrowRight" ? 1 : MODES.length - 1)) % MODES.length];
+      setMode(m); $("tab-" + m).focus();
+    }
   });
   $("tq").addEventListener("input", render);
   $("tagmore").addEventListener("click", () => {
@@ -1182,6 +1265,6 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
   }
   window.addEventListener("hashchange", openFromHash);
 
-  try { if (localStorage.getItem("bib-mode") === "temas") setMode("temas"); } catch (e) {}
+  try { const m = localStorage.getItem("bib-mode"); if (m && m !== "busca") setMode(m); } catch (e) {}
   boot();
 })();

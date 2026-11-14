@@ -350,3 +350,28 @@ h1, .card h2, .read h2, .login-card h1 { font-weight: 700; letter-spacing: -0.02
   .login { padding-block: 20px; align-items: start; }
   .login-card { padding: 26px 20px; }
 }
+
+/* Aba Datas */
+.datebar { flex-wrap: wrap; align-items: center; justify-content: space-between; }
+.dquick { display: flex; flex-wrap: wrap; gap: 6px; }
+.dquick .tag { height: 30px; align-items: center; padding: 0 12px; }
+.drange { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.drange input { height: 32px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); padding: 0 8px; font-size: 13px; color: var(--ink); }
+.drange input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.dmonths { display: flex; gap: 6px; overflow-x: auto; padding: 2px 2px 6px; scrollbar-width: thin; }
+.dmonths .tag { flex: none; height: 30px; align-items: center; padding: 0 12px; gap: 6px; text-transform: capitalize; }
+.dmonths .tag .n { font-size: 10.5px; background: var(--surface); border-radius: 999px; padding: 0 6px; line-height: 17px; }
+.dmonths .tag.on .n { background: rgba(255, 255, 255, .22); color: inherit; }
+.dmonths .tagempty { line-height: 30px; }
+.tagfoot strong { color: var(--accent); font-weight: 600; }
+.cdate { color: var(--muted); font-weight: 400; }
+@media (max-width: 640px) {
+  .drange { width: 100%; }
+  .drange input { flex: 1; min-width: 0; }
+}
+.tabs button { white-space: nowrap; }
+@media (max-width: 640px) {
+  .tab-long { display: none; }
+  .tabs { justify-content: space-between; }
+  .tabs button { flex: 1; justify-content: center; padding: 10px 6px; }
+}
