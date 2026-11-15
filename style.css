@@ -468,3 +468,10 @@ dialog { width: min(760px, calc((100vw - 24px) / var(--z, 1))); max-height: calc
 .vozbox .btn { align-self: flex-start; }
 .vozbox .cfg-note { margin: 0; }
 @media (max-width: 640px) { .vozbox { margin-left: 0; } }
+
+/* Tocador da voz humana dentro do roteiro */
+.vozplayer { margin-top: 18px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); display: flex; flex-direction: column; gap: 8px; }
+.vozplayer audio { width: 100%; height: 40px; }
+.vozplayer .dates { margin: 0; }
+.vozadm { gap: 12px; }
+.vozadm .cfg-note { margin: 0; }

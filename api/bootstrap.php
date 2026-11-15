@@ -249,3 +249,151 @@ function valid_ymd(string $s): ?string
     if (!preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $s, $m)) return null;
     return checkdate((int) $m[2], (int) $m[3], (int) $m[1]) && (int) $m[1] >= 1900 && (int) $m[1] <= 2200 ? $s : null;
 }
+
+// ---------- Voz humana (Microsoft Azure, vozes neurais) ----------
+// A chave fica em roteiros-dados/voz.json (fora da pasta pública) e nunca sai do servidor.
+const VOZES_AZURE = ['francisca' => 'pt-BR-FranciscaNeural', 'antonio' => 'pt-BR-AntonioNeural'];
+
+function voz_file(): ?string
+{
+    return data_dir() ? data_dir() . DIRECTORY_SEPARATOR . 'voz.json' : null;
+}
+
+function voz_cfg(): ?array
+{
+    $f = voz_file();
+    if (!$f || !is_file($f)) return null;
+    $c = json_decode((string) file_get_contents($f), true);
+    return is_array($c) && !empty($c['chave']) && !empty($c['regiao']) ? $c : null;
+}
+
+function audio_dir(): ?string
+{
+    if (!data_dir()) return null;
+    $d = data_dir() . DIRECTORY_SEPARATOR . 'audio';
+    if (!is_dir($d)) @mkdir($d, 0750, true);
+    return is_dir($d) && is_writable($d) ? $d : null;
+}
+
+// Texto do roteiro para ser lido: sem marcações (##, **, >, -, colchetes)
+function texto_para_voz(array $r): string
+{
+    $corpo = (string) ($r['roteiro'] !== '' ? $r['roteiro'] : $r['texto_pdf']);
+    $corpo = preg_replace(['/^#{1,3}\s+/m', '/\*\*|__/', '/^>\s?/m', '/^[-•*]\s+/m', '/[\[\]]/'], '', $corpo) ?? '';
+    $partes = array_filter(array_map('trim', [(string) $r['titulo'], (string) $r['passagem'], (string) $r['resumo'], $corpo]));
+    return trim(implode("\n\n", $partes));
+}
+
+// Divide em pedaços de até ~2500 caracteres, sem cortar frases
+function pedacos_voz(string $texto, int $max = 2500): array
+{
+    $frases = preg_split('/(?<=[.!?;:])\s+|\n{2,}/u', $texto) ?: [];
+    $out = [];
+    $atual = '';
+    foreach ($frases as $f) {
+        $f = trim($f);
+        if ($f === '') continue;
+        if ($atual !== '' && text_len($atual) + text_len($f) + 1 > $max) {
+            $out[] = $atual;
+            $atual = $f;
+        } else {
+            $atual = $atual === '' ? $f : $atual . "\n" . $f;
+        }
+    }
+    if ($atual !== '') $out[] = $atual;
+    return $out;
+}
+
+function ssml_voz(string $voz, string $texto): string
+{
+    $linhas = array_filter(array_map('trim', explode("\n", $texto)));
+    $corpo = implode('<break time="450ms"/>', array_map(fn($l) => htmlspecialchars($l, ENT_XML1 | ENT_QUOTES, 'UTF-8'), $linhas));
+    return '<speak version="1.0" xml:lang="pt-BR" xmlns="http://www.w3.org/2001/10/synthesis"><voice name="' . $voz . '">' . $corpo . '</voice></speak>';
+}
+
+// Chama o Azure e devolve o MP3; lança exceção com o código HTTP em caso de erro
+function azure_tts(array $cfg, string $voz, string $texto): string
+{
+    if (!function_exists('curl_init')) throw new RuntimeException('curl');
+    $ch = curl_init('https://' . $cfg['regiao'] . '.tts.speech.microsoft.com/cognitiveservices/v1');
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => ssml_voz($voz, $texto),
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 90,
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_HTTPHEADER => [
+            'Ocp-Apim-Subscription-Key: ' . $cfg['chave'],
+            'Content-Type: application/ssml+xml',
+            'X-Microsoft-OutputFormat: audio-24khz-48kbitrate-mono-mp3',
+            'User-Agent: roteiros-one-flow',
+        ],
+    ]);
+    $out = curl_exec($ch);
+    $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($out === false || $code !== 200 || $out === '') throw new RuntimeException((string) $code);
+    return (string) $out;
+}
+
+// Gera (uma vez) e devolve o caminho do MP3 guardado
+function audio_cache(array $cfg, string $vozKey, string $nomeBase, string $texto): string
+{
+    $dir = audio_dir();
+    if (!$dir) throw new RuntimeException('dir');
+    $hash = substr(hash('sha256', $vozKey . '|' . $texto), 0, 16);
+    $file = $dir . DIRECTORY_SEPARATOR . "$nomeBase-$vozKey-$hash.mp3";
+    if (is_file($file)) return $file;
+    @set_time_limit(240);
+    $lock = fopen("$file.lock", 'c');
+    if ($lock) flock($lock, LOCK_EX);
+    try {
+        if (!is_file($file)) {
+            $mp3 = '';
+            foreach (pedacos_voz($texto) as $parte) $mp3 .= azure_tts($cfg, VOZES_AZURE[$vozKey], $parte);
+            foreach (glob($dir . DIRECTORY_SEPARATOR . "$nomeBase-$vozKey-*.mp3") ?: [] as $antigo) @unlink($antigo);
+            file_put_contents("$file.tmp", $mp3);
+            rename("$file.tmp", $file);
+        }
+    } finally {
+        if ($lock) { flock($lock, LOCK_UN); fclose($lock); }
+        @unlink("$file.lock");
+    }
+    return $file;
+}
+
+function delete_audio_for(string $nomeBase): void
+{
+    $dir = audio_dir();
+    if (!$dir) return;
+    foreach (glob($dir . DIRECTORY_SEPARATOR . "$nomeBase-*.mp3") ?: [] as $f) @unlink($f);
+}
+
+// Envia um arquivo com suporte a "Range" (permite avançar e voltar no áudio)
+function send_file_range(string $path, string $type): void
+{
+    $size = filesize($path);
+    $start = 0;
+    $end = $size - 1;
+    header('Accept-Ranges: bytes');
+    header('Content-Type: ' . $type);
+    header('Cache-Control: private, max-age=86400');
+    if (preg_match('/bytes=(\d*)-(\d*)/', (string) ($_SERVER['HTTP_RANGE'] ?? ''), $m) && ($m[1] !== '' || $m[2] !== '')) {
+        if ($m[1] === '') { $start = max(0, $size - (int) $m[2]); }
+        else { $start = (int) $m[1]; if ($m[2] !== '') $end = min($end, (int) $m[2]); }
+        if ($start > $end || $start >= $size) { http_response_code(416); header("Content-Range: bytes */$size"); exit; }
+        http_response_code(206);
+        header("Content-Range: bytes $start-$end/$size");
+    }
+    header('Content-Length: ' . ($end - $start + 1));
+    $fh = fopen($path, 'rb');
+    fseek($fh, $start);
+    $restante = $end - $start + 1;
+    while ($restante > 0 && !feof($fh)) {
+        $bloco = fread($fh, (int) min(65536, $restante));
+        echo $bloco;
+        $restante -= strlen($bloco);
+    }
+    fclose($fh);
+    exit;
+}

@@ -4,7 +4,7 @@
   const $ = id => document.getElementById(id);
 
   // ---------- API ----------
-  let csrf = "";
+  let csrf = "", vozHumana = false;
   async function api(action, { body, form, params } = {}) {
     const url = "api/?a=" + encodeURIComponent(action) + (params ? "&" + new URLSearchParams(params) : "");
     const post = !!(body || form);
@@ -23,6 +23,7 @@
       throw err;
     }
     if (data && data.csrf) csrf = data.csrf;
+    if (data && "voz_humana" in data) vozHumana = !!data.voz_humana;
     return data || {};
   }
   // Primeiro toque arma o botão (muda o texto); o segundo, em até 4 s, confirma
@@ -232,15 +233,28 @@
           ${chave("espaco", "Espaçamento de leitura", "Mais espaço entre letras, palavras e linhas. Ajuda pessoas com dislexia.")}
           ${chave("movimento", "Reduzir animações", "Tira movimentos e transições da tela.")}
           ${chave("foco", "Destacar o foco do teclado", "Contorno grosso no item selecionado ao navegar com a tecla Tab.")}
-          ${chave("voz", "Ouvir roteiros em voz alta", temVoz ? "Mostra o botão “Ouvir” em cada roteiro, que lê o texto para você." : "Este navegador não tem leitura em voz alta.", temVoz ? "" : " disabled")}
-          ${temVoz ? `<div class="vozbox">
+          ${chave("voz", "Ouvir roteiros em voz alta", podeOuvir() ? "Mostra o botão “Ouvir” em cada roteiro, que lê o texto para você." : "Este navegador não tem leitura em voz alta.", podeOuvir() ? "" : " disabled")}
+          ${podeOuvir() ? `<div class="vozbox">
             <div class="field"><label for="cfg-voz">Voz da leitura</label><select id="cfg-voz">${opcoesVoz()}</select></div>
             ${grupo("vozVel", "normal", "Velocidade", [["devagar", "Mais devagar"], ["normal", "Normal"], ["rapido", "Mais rápida"]])}
             <button class="btn sm" type="button" data-act="voz-teste">Testar voz</button>
-            <p class="cfg-note">As vozes vêm do seu aparelho. As mais naturais (★): no computador, o <strong>Microsoft Edge</strong> traz as vozes “Natural” (Francisca e Antonio) e o <strong>Chrome</strong> traz a “Google português do Brasil”. No <strong>iPhone</strong>, baixe a voz Luciana ou Felipe “Premium” em Ajustes › Acessibilidade › Conteúdo Falado › Vozes.</p>
+            <p class="cfg-note">${vozHumana ? "<strong>Francisca</strong> e <strong>Antonio</strong> são vozes humanas (neurais) e soam iguais em qualquer aparelho. As demais vêm do seu aparelho." : "As vozes vêm do seu aparelho."} As mais naturais do aparelho (★): no computador, o <strong>Microsoft Edge</strong> traz as vozes “Natural” (Francisca e Antonio) e o <strong>Chrome</strong> traz a “Google português do Brasil”. No <strong>iPhone</strong>, baixe a voz Luciana ou Felipe “Premium” em Ajustes › Acessibilidade › Conteúdo Falado › Vozes.</p>
           </div>` : ""}
           <button class="linkbtn" type="button" data-act="prefs-reset">Voltar tudo ao padrão</button>
         </section>
+        ${me?.is_admin && area === "admin" ? `<section aria-labelledby="cfg-vozadm">
+          <h3 id="cfg-vozadm">Voz humana · Microsoft Azure</h3>
+          <p class="cfg-note" id="vozadm-status">Carregando…</p>
+          <form class="edit vozadm" id="vozform" novalidate>
+            <div class="row2">
+              <div class="field"><label for="az-regiao">Região do recurso</label><input id="az-regiao" maxlength="40" placeholder="brazilsouth" autocomplete="off" spellcheck="false"></div>
+              <div class="field"><label for="az-chave">Chave (Chave 1)</label><input id="az-chave" type="password" maxlength="200" autocomplete="off" spellcheck="false"></div>
+            </div>
+            <div class="err" id="az-err" role="alert"></div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px"><button class="btn primary" type="submit" id="az-save">Salvar e testar</button><button class="btn danger" type="button" data-act="az-remover" id="az-remover" hidden>Desligar voz humana</button></div>
+            <p class="cfg-note">No portal do Azure: <strong>Criar recurso → Fala (Speech)</strong>, plano <strong>Gratuito F0</strong> (500 mil caracteres por mês). Depois, em <strong>Chaves e Ponto de Extremidade</strong>, copie a Chave 1 e a Região. A chave fica guardada só no servidor e não aparece para ninguém.</p>
+          </form>
+        </section>` : ""}
         ${me ? `<section aria-labelledby="cfg-conta">
           <h3 id="cfg-conta">Conta</h3>
           <div class="acct"><span class="avatar-i" aria-hidden="true">${esc((me.nome || me.email || "?")[0])}</span>
@@ -254,9 +268,41 @@
       <div class="dlg-foot"><span class="dates">As preferências ficam salvas neste aparelho.</span><span><button class="btn primary" type="button" data-act="close">Pronto</button></span></div>`;
     if (!dlg.open) dlg.showModal();
     inner.querySelector('[data-pref="tema"][aria-checked="true"]')?.focus();
+    if ($("vozform")) carregarVozAdmin();
+  }
+  async function carregarVozAdmin() {
+    try {
+      const c = await api("voz_config");
+      mostrarVozAdmin(c);
+    } catch (ex) { const st = $("vozadm-status"); if (st) st.textContent = ex.erro; }
+  }
+  function mostrarVozAdmin(c) {
+    const st = $("vozadm-status"); if (!st) return;
+    st.innerHTML = c.configurada
+      ? `<strong>Ligada.</strong> Região ${esc(c.regiao)}, chave terminando em ${esc(c.final)}. Para trocar, cole a nova chave abaixo.`
+      : "<strong>Desligada.</strong> Cole a chave do recurso de Fala do Azure para ativar as vozes Francisca e Antonio para todos.";
+    if (c.regiao) $("az-regiao").value = c.regiao;
+    $("az-remover").hidden = !c.configurada;
+  }
+  async function salvarVozAdmin(e) {
+    e.preventDefault();
+    const err = $("az-err"), btn = $("az-save");
+    err.textContent = ""; btn.disabled = true; btn.textContent = "Testando…";
+    try {
+      const c = await api("voz_config_salvar", { body: { regiao: $("az-regiao").value.trim(), chave: $("az-chave").value.trim() } });
+      $("az-chave").value = "";
+      vozHumana = true;
+      mostrarVozAdmin(c);
+      toast("Voz humana ligada");
+      openSettings();
+    } catch (ex) {
+      err.textContent = ex.erro;
+    } finally {
+      if (btn.isConnected) { btn.disabled = false; btn.textContent = "Salvar e testar"; }
+    }
   }
   document.addEventListener("change", e => {
-    if (e.target.id === "cfg-voz") { Prefs.set("vozNome", e.target.value); pararVoz(); falar(TEXTO_TESTE); return; }
+    if (e.target.id === "cfg-voz") { Prefs.set("vozNome", e.target.value); pararVoz(); $("cfg-voz").closest(".vozbox")?.querySelector('[data-act="voz-teste"]')?.click(); return; }
     const k = e.target.dataset?.prefBool;
     if (!k) return;
     Prefs.set(k, e.target.checked);
@@ -285,15 +331,32 @@
     return speechSynthesis.getVoices().filter(v => /^pt/i.test(v.lang))
       .sort((a, b) => notaVoz(b) - notaVoz(a) || a.name.localeCompare(b.name));
   }
+  const podeOuvir = () => vozHumana || temVoz;
+  // Voz humana escolhida ("francisca" ou "antonio"), ou null quando a leitura usa a voz do aparelho
+  function vozHumanaEscolhida() {
+    if (!vozHumana) return null;
+    const nome = Prefs.get().vozNome || "";
+    if (!nome) return "francisca";
+    const m = /^azure:(francisca|antonio)$/.exec(nome);
+    return m ? m[1] : null;
+  }
   function vozEscolhida() {
     const lista = vozesPt(), nome = Prefs.get().vozNome;
     return (nome && lista.find(v => v.name === nome)) || lista[0] || null;
   }
   function opcoesVoz() {
     const lista = vozesPt(), atual = Prefs.get().vozNome || "";
-    if (!lista.length) return `<option value="">Nenhuma voz em português neste aparelho</option>`;
-    return `<option value="">Automática: a mais natural (${esc(lista[0].name)})</option>` +
-      lista.map(v => `<option value="${esc(v.name)}"${v.name === atual ? " selected" : ""}>${notaVoz(v) >= 35 ? "★ " : ""}${esc(v.name)}</option>`).join("");
+    let html = "";
+    if (vozHumana) {
+      const h = vozHumanaEscolhida();
+      html += `<optgroup label="Vozes humanas (neurais)">
+        <option value="azure:francisca"${h === "francisca" ? " selected" : ""}>Francisca · voz humana feminina</option>
+        <option value="azure:antonio"${h === "antonio" ? " selected" : ""}>Antonio · voz humana masculina</option></optgroup>`;
+    }
+    if (!lista.length) return html || `<option value="">Nenhuma voz em português neste aparelho</option>`;
+    const doAparelho = lista.map(v => `<option value="${esc(v.name)}"${v.name === atual ? " selected" : ""}>${notaVoz(v) >= 35 ? "★ " : ""}${esc(v.name)}</option>`).join("");
+    return vozHumana ? html + `<optgroup label="Vozes do aparelho">${doAparelho}</optgroup>`
+      : `<option value="">Automática: a mais natural (${esc(lista[0].name)})</option>` + doAparelho;
   }
   function falar(texto, aoTerminar) {
     const voz = vozEscolhida(), vel = VELOCIDADE[Prefs.get().vozVel] || 1;
@@ -315,10 +378,34 @@
       .replace(/^[-•*]\s+/gm, "").replace(/[[\]]/g, "");
     return [it.titulo, it.passagem, it.resumo, corpo].filter(Boolean).join(".\n");
   }
+  let audioEl = null;
+  function tocarHumana(btn, src) {
+    const box = $("vozplayer");
+    audioEl = new Audio();
+    audioEl.preload = "auto";
+    audioEl.controls = true;
+    audioEl.setAttribute("aria-label", "Áudio do roteiro");
+    audioEl.playbackRate = VELOCIDADE[Prefs.get().vozVel] || 1;
+    if (box) {
+      box.hidden = false;
+      box.innerHTML = `<p class="dates" id="vozmsg">Preparando o áudio… Na primeira vez, um roteiro leva alguns segundos.</p>`;
+      box.appendChild(audioEl);
+    }
+    falando = true;
+    if (btn) { btn.textContent = "Parar"; btn.setAttribute("aria-pressed", "true"); }
+    audioEl.addEventListener("playing", () => { const m = $("vozmsg"); if (m) m.remove(); });
+    audioEl.addEventListener("ended", pararVoz);
+    audioEl.addEventListener("error", () => { pararVoz(); toast("Não foi possível gerar o áudio agora. Tente de novo em instantes."); });
+    audioEl.src = src;
+    audioEl.play().catch(() => {});
+  }
   function ouvir(btn) {
     if (falando) { pararVoz(); return; }
     const it = items.find(x => x.id === openId);
-    if (!it || !temVoz) return;
+    if (!it) return;
+    const humana = vozHumanaEscolhida();
+    if (humana) { tocarHumana(btn, `api/?a=voz_audio&id=${encodeURIComponent(it.id)}&voz=${humana}`); return; }
+    if (!temVoz) return;
     // Em blocos curtos: alguns navegadores param de ler frases muito longas
     const partes = textoParaOuvir(it).split(/\n+|(?<=[.!?;:])\s+/).map(t => t.trim()).filter(Boolean);
     const blocos = [];
@@ -332,6 +419,8 @@
   }
   function pararVoz() {
     if (temVoz) speechSynthesis.cancel();
+    if (audioEl) { audioEl.pause(); audioEl.removeAttribute("src"); audioEl.load(); audioEl = null; }
+    const box = $("vozplayer"); if (box) { box.hidden = true; box.innerHTML = ""; }
     falando = false;
     const b = document.querySelector('[data-act="ouvir"]');
     if (b) { b.textContent = "Ouvir"; b.setAttribute("aria-pressed", "false"); }
@@ -717,12 +806,13 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
         ${it.passagem ? `<div class="ref">${esc(it.passagem)}</div>` : ""}
         ${it.resumo ? `<p class="lead">${esc(it.resumo)}</p>` : ""}
         ${(it.tags || []).length ? `<div class="tagline">${it.tags.map(t => `<button type="button" class="tag" data-tag="${esc(t)}" data-close="1">#${esc(t)}</button>`).join("")}</div>` : ""}
+        <div class="vozplayer" id="vozplayer" hidden></div>
         ${it.pdf ? `<div class="pdfview"><div class="pdfbar"><span><strong>${esc(it.pdf.nome || "Roteiro em PDF")}</strong>${it.pdf.paginas ? " · " + pagesTxt(it.pdf.paginas) : ""}</span><a class="btn sm" href="${esc(pdfUrl(it.id))}" target="_blank" rel="noopener">Abrir em nova aba</a></div><div class="pdfpages" id="pdfpages"><p class="dates">Carregando o PDF…</p></div></div>` : ""}
         ${it.roteiro || !it.pdf ? `<div class="prose">${renderProse(it.roteiro) || '<p style="color:var(--muted)">Este roteiro ainda não tem conteúdo.</p>'}</div>` : ""}
       </div>
       <div class="dlg-foot">
         <span class="dates">${it.criadoEm ? "Criado em " + esc(fmtDate(it.criadoEm)) : ""}${it.atualizadoEm && it.atualizadoEm !== it.criadoEm ? " · editado em " + esc(fmtDate(it.atualizadoEm)) : ""}</span>
-        <span style="display:flex;flex-wrap:wrap;gap:8px">${writable ? `<button class="btn danger" type="button" data-act="del">Excluir</button><button class="btn" type="button" data-act="edit">Editar</button>` : ""}${temVoz && Prefs.get().voz ? '<button class="btn" type="button" data-act="ouvir" aria-pressed="false">Ouvir</button>' : ""}<button class="btn primary" type="button" data-act="download">Baixar PDF</button></span>
+        <span style="display:flex;flex-wrap:wrap;gap:8px">${writable ? `<button class="btn danger" type="button" data-act="del">Excluir</button><button class="btn" type="button" data-act="edit">Editar</button>` : ""}${podeOuvir() && Prefs.get().voz ? '<button class="btn" type="button" data-act="ouvir" aria-pressed="false">Ouvir</button>' : ""}<button class="btn primary" type="button" data-act="download">Baixar PDF</button></span>
       </div>`;
     if (!dlg.open) dlg.showModal();
     inner.querySelector(".dlg-body").scrollTop = 0;
@@ -1346,7 +1436,15 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
     else if (act === "del") { if (canWriteNow()) del(actEl); }
     else if (act === "download") baixar(actEl);
     else if (act === "ouvir") ouvir(actEl);
-    else if (act === "voz-teste") { pararVoz(); falar(TEXTO_TESTE); }
+    else if (act === "voz-teste") {
+      pararVoz();
+      const h = vozHumanaEscolhida();
+      if (h) { const a = new Audio(`api/?a=voz_audio&id=teste&voz=${h}`); a.playbackRate = VELOCIDADE[Prefs.get().vozVel] || 1; audioEl = a; a.play().catch(() => toast("Não foi possível tocar a voz agora.")); }
+      else falar(TEXTO_TESTE);
+    }
+    else if (act === "az-remover") {
+      if (armConfirm(actEl, "Confirmar: desligar")) api("voz_config_salvar", { body: { remover: 1 } }).then(() => { vozHumana = false; toast("Voz humana desligada"); openSettings(); }).catch(ex => toast(ex.erro));
+    }
     else if (act === "changepass") openPass();
     else if (act === "logout") { closeDlg(); logout(); }
     else if (act === "prefs-reset") { Prefs.reset(); pararVoz(); openSettings(); toast("Preferências voltaram ao padrão"); }
@@ -1380,6 +1478,7 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
     else if (e.target.id === "passform") savePass(e);
     else if (e.target.id === "userform") saveUser(e);
     else if (e.target.id === "invform") createInvite(e);
+    else if (e.target.id === "vozform") salvarVozAdmin(e);
   });
   $("new").addEventListener("click", () => { if (canWriteNow()) openEdit(null); });
   qEl.addEventListener("input", render);

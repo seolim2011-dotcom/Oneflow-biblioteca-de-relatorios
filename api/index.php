@@ -149,7 +149,7 @@ function require_admin(): array
 
 function session_out(): void
 {
-    out(['usuario' => current_user(true), 'csrf' => $_SESSION['csrf']]);
+    out(['usuario' => current_user(true), 'csrf' => $_SESSION['csrf'], 'voz_humana' => voz_cfg() !== null]);
 }
 
 // ---------- Roteiros e PDFs ----------
@@ -366,6 +366,7 @@ switch ($action) {
         if ($r) {
             db()->prepare('DELETE FROM roteiros WHERE id = ?')->execute([$r['id']]);
             delete_pdf_file($r['pdf_arquivo']);
+            delete_audio_for('r' . (int) $r['id']);
         }
         out(['ok' => true]);
 
@@ -531,6 +532,69 @@ switch ($action) {
         }
         begin_session($uid, $hash);
         session_out();
+
+    // ---------- Voz humana (Azure) ----------
+    case 'voz_audio':
+        require_user();
+        $cfg = voz_cfg();
+        if (!$cfg) fail('A voz humana ainda não foi configurada por um administrador.', 404);
+        $vozKey = (string) ($_GET['voz'] ?? 'francisca');
+        if (!isset(VOZES_AZURE[$vozKey])) $vozKey = 'francisca';
+        if (($_GET['id'] ?? '') === 'teste') {
+            $texto = 'Olá! Esta é a voz que vai ler os roteiros da célula para você. Que Deus abençoe o seu encontro.';
+            $base = 'teste';
+        } else {
+            ensure_data_celula();
+            $r = find_roteiro((int) ($_GET['id'] ?? 0));
+            if (!$r) fail('Roteiro não encontrado.', 404);
+            $texto = texto_para_voz($r);
+            if ($texto === '') fail('Este roteiro não tem texto para ler.', 422);
+            $base = 'r' . (int) $r['id'];
+        }
+        try {
+            $file = audio_cache($cfg, $vozKey, $base, $texto);
+        } catch (RuntimeException $e) {
+            error_log('voz_audio: ' . $e->getMessage());
+            $code = $e->getMessage();
+            if ($code === '401' || $code === '403') fail('A chave da voz humana não está mais valendo. Um administrador precisa conferir em Configurações.', 502);
+            if ($code === '429') fail('O limite de uso da voz humana foi atingido. Tente mais tarde.', 503);
+            fail('Não foi possível gerar o áudio agora. Tente de novo em instantes.', 502);
+        }
+        header_remove('Content-Security-Policy');
+        send_file_range($file, 'audio/mpeg');
+
+    case 'voz_config':
+        require_admin();
+        $cfg = voz_cfg();
+        out(['configurada' => $cfg !== null, 'regiao' => $cfg['regiao'] ?? '', 'final' => $cfg ? substr((string) $cfg['chave'], -4) : '']);
+
+    case 'voz_config_salvar':
+        require_post();
+        require_admin();
+        $f = voz_file();
+        if (!$f) fail('A pasta de dados do servidor não pode ser gravada.', 500);
+        if (!empty(body()['remover'])) {
+            @unlink($f);
+            foreach (glob((audio_dir() ?? '') . DIRECTORY_SEPARATOR . '*.mp3') ?: [] as $a) @unlink($a);
+            out(['configurada' => false]);
+        }
+        $regiao = strtolower(str_in('regiao', 40));
+        $chave = str_in('chave', 200);
+        if (!preg_match('/^[a-z0-9]{3,40}$/', $regiao)) fail('Digite a região do recurso, por exemplo brazilsouth.', 422);
+        if (!preg_match('/^[A-Za-z0-9]{20,200}$/', $chave)) fail('A chave parece incompleta. Copie a "Chave 1" do recurso de Fala no portal do Azure.', 422);
+        $cfg = ['regiao' => $regiao, 'chave' => $chave];
+        try {
+            azure_tts($cfg, VOZES_AZURE['francisca'], 'Teste.');
+        } catch (RuntimeException $e) {
+            $code = $e->getMessage();
+            if ($code === '401' || $code === '403') fail('O Azure recusou a chave. Confira se a chave e a região são do mesmo recurso de Fala.', 422);
+            if ($code === '0' || $code === 'curl') fail('Não consegui falar com o Azure. Confira a região (ex.: brazilsouth, eastus).', 422);
+            fail('O Azure respondeu com erro ' . $code . '. Tente de novo em instantes.', 502);
+        }
+        file_put_contents($f, json_encode($cfg));
+        @chmod($f, 0600);
+        foreach (glob((audio_dir() ?? '') . DIRECTORY_SEPARATOR . '*.mp3') ?: [] as $a) @unlink($a);
+        out(['configurada' => true, 'regiao' => $regiao, 'final' => substr($chave, -4)]);
 
     default:
         fail('Ação desconhecida.', 404);
