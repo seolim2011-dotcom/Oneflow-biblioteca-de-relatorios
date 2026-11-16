@@ -102,6 +102,12 @@
     const dt = new Date(y, mo - 1, d);
     return dt.getFullYear() === y && dt.getMonth() === mo - 1 && dt.getDate() === d ? ymd(dt) : "";
   }
+  function limparTitulo(t) {
+    return /^\s*roteiro\s+(?:de\s+c[ée]lula\s+)?one\s*flow\b/i.test(t) ? titleFromFile(t) : t;
+  }
+  // Prévia do PDF no cartão sem a frase "Roteiro escrito por … PIB Curitiba" (o autor já aparece em "por …")
+  const previaPdf = t => String(t || "").replace(/roteiro\s+escrito\s+por[\s\S]{0,240}?pib\s+curitiba\.?/i, "")
+    .replace(/^\s*flow\s+news\s*/i, "").replace(/\s+/g, " ").trim().slice(0, 220);
   const RE_AUTORIA = /roteiro\s+escrito\s+por\s*\**\s*([^*\n]+?)(?:\s+|\s*\*+\s*)e\s+revisado/i;
   function autorNoTexto(texto) {
     const m = RE_AUTORIA.exec(String(texto || ""));
@@ -118,7 +124,7 @@
 
   const fromRow = r => {
     const it = {
-      id: String(r.id), numero: r.numero, titulo: r.titulo || "", passagem: r.passagem || "", tags: r.tags || [],
+      id: String(r.id), numero: r.numero, titulo: limparTitulo(r.titulo || ""), passagem: r.passagem || "", tags: r.tags || [],
       resumo: r.resumo || "", data: r.data || "", autor: r.autor || "", roteiro: r.roteiro || "", textoPdf: r.texto_pdf || "",
       criadoEm: r.criado_em, atualizadoEm: r.atualizado_em,
       pdf: r.pdf ? { nome: r.pdf.nome, tamanho: r.pdf.tamanho, paginas: r.pdf.paginas } : null
@@ -631,7 +637,7 @@
         <h2>${highlight(it.titulo, pq.words)}</h2>
         ${it.passagem ? `<span class="ref">${highlight(it.passagem, pq.words)}</span>` : ""}
         ${effAutor(it) ? `<span class="porautor">por ${highlight(effAutor(it), pq.words)}</span>` : ""}
-        ${it.resumo ? `<p class="resumo">${highlight(it.resumo, pq.words)}</p>` : it.textoPdf ? `<p class="resumo">${highlight(it.textoPdf.slice(0, 220), pq.words)}</p>` : ""}
+        ${it.resumo ? `<p class="resumo">${highlight(it.resumo, pq.words)}</p>` : previaPdf(it.textoPdf) ? `<p class="resumo">${highlight(previaPdf(it.textoPdf), pq.words)}</p>` : ""}
         ${(it.tags || []).length ? `<span class="mini">${it.tags.map(t => "#" + esc(t)).join(" ")}</span>` : ""}
       </button>`;
     // Todos os quadros numa grade só, na ordem escolhida (por padrão, data mais recente primeiro)
