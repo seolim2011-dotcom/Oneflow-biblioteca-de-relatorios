@@ -165,6 +165,7 @@ function roteiro_out(array $r): array
         'tags' => is_array($tags) ? array_values($tags) : [],
         'resumo' => $r['resumo'],
         'data' => $r['data_celula'] ?? null,
+        'autor' => $r['autor'] ?? '',
         'roteiro' => $r['roteiro'],
         'texto_pdf' => $r['texto_pdf'],
         'pdf' => $r['pdf_arquivo'] ? [
@@ -320,6 +321,7 @@ switch ($action) {
             'tags' => json_encode(parse_tags(), JSON_UNESCAPED_UNICODE),
             'resumo' => str_in('resumo', 400),
             'data_celula' => null,
+            'autor' => str_in('autor', 120),
             'roteiro' => text_cut(rtrim(raw_in('roteiro')), 200000),
         ];
         $data = str_in('data', 10);

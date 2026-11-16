@@ -240,6 +240,10 @@ function ensure_data_celula(): void
     if (!db()->query("SHOW COLUMNS FROM roteiros LIKE 'data_celula'")->fetch()) {
         db()->exec('ALTER TABLE roteiros ADD COLUMN data_celula DATE NULL AFTER resumo');
     }
+    // Quem escreveu o roteiro ("Roteiro escrito por …")
+    if (!db()->query("SHOW COLUMNS FROM roteiros LIKE 'autor'")->fetch()) {
+        db()->exec("ALTER TABLE roteiros ADD COLUMN autor VARCHAR(120) NOT NULL DEFAULT '' AFTER data_celula");
+    }
     $ok = true;
 }
 

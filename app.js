@@ -102,13 +102,24 @@
     const dt = new Date(y, mo - 1, d);
     return dt.getFullYear() === y && dt.getMonth() === mo - 1 && dt.getDate() === d ? ymd(dt) : "";
   }
+  const RE_AUTORIA = /roteiro\s+escrito\s+por\s*\**\s*([^*\n]+?)(?:\s+|\s*\*+\s*)e\s+revisado/i;
+  function autorNoTexto(texto) {
+    const m = RE_AUTORIA.exec(String(texto || ""));
+    if (!m) return "";
+    const nome = m[1].replace(/[[\]*_]/g, "").replace(/\s+/g, " ").trim();
+    return nome && !/^nome$/i.test(nome) ? nome.slice(0, 120) : "";
+  }
+  // Autor do roteiro: o campo "Escrito por", ou o que estiver escrito no texto ou no PDF
+  const effAutor = it => it.autor || autorNoTexto(it.roteiro) || autorNoTexto(it.textoPdf);
+  // A linha de autoria do texto não se repete, já que aparece no topo do roteiro
+  const semAutoria = t => String(t || "").replace(/^.*roteiro\s+escrito\s+por.*\n?/im, "");
   const fmtDate = iso => { try { return new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" }); } catch (e) { return ""; } };
   const parseTags = s => [...new Set(String(s || "").split(/[\s,;]+/).map(t => t.replace(/^#+/, "").trim().toLowerCase()).filter(Boolean))];
 
   const fromRow = r => {
     const it = {
       id: String(r.id), numero: r.numero, titulo: r.titulo || "", passagem: r.passagem || "", tags: r.tags || [],
-      resumo: r.resumo || "", data: r.data || "", roteiro: r.roteiro || "", textoPdf: r.texto_pdf || "",
+      resumo: r.resumo || "", data: r.data || "", autor: r.autor || "", roteiro: r.roteiro || "", textoPdf: r.texto_pdf || "",
       criadoEm: r.criado_em, atualizadoEm: r.atualizado_em,
       pdf: r.pdf ? { nome: r.pdf.nome, tamanho: r.pdf.tamanho, paginas: r.pdf.paginas } : null
     };
@@ -538,7 +549,7 @@
     }
     for (const t of pq.tags) if (!(it.tags || []).some(tag => norm(tag).startsWith(t))) return false;
     if (pq.words.length) {
-      const hay = norm([it.titulo, it.passagem, it._p?.book, BOOKS[it._p?.idx]?.[1], it.resumo, it.roteiro, it.textoPdf, fmtDia(effDate(it)), effDate(it) ? fmtMes(effDate(it).slice(0, 7)) : ""].join(" "));
+      const hay = norm([it.titulo, it.passagem, it._p?.book, BOOKS[it._p?.idx]?.[1], it.resumo, effAutor(it), it.roteiro, it.textoPdf, fmtDia(effDate(it)), effDate(it) ? fmtMes(effDate(it).slice(0, 7)) : ""].join(" "));
       for (const w of pq.words) if (!hay.includes(w)) return false;
     }
     return true;
@@ -619,6 +630,7 @@
         <span class="card-top"><span class="num">${effDate(it) ? fmtDia(effDate(it)) : ""}</span><span class="right">${it.pdf ? '<span class="pdfbadge">PDF</span>' : ""}<span class="testament">${it._p ? (it._p.t === "AT" ? "ANTIGO T." : "NOVO T.") : ""}</span></span></span>
         <h2>${highlight(it.titulo, pq.words)}</h2>
         ${it.passagem ? `<span class="ref">${highlight(it.passagem, pq.words)}</span>` : ""}
+        ${effAutor(it) ? `<span class="porautor">por ${highlight(effAutor(it), pq.words)}</span>` : ""}
         ${it.resumo ? `<p class="resumo">${highlight(it.resumo, pq.words)}</p>` : it.textoPdf ? `<p class="resumo">${highlight(it.textoPdf.slice(0, 220), pq.words)}</p>` : ""}
         ${(it.tags || []).length ? `<span class="mini">${it.tags.map(t => "#" + esc(t)).join(" ")}</span>` : ""}
       </button>`;
@@ -733,9 +745,7 @@
 
   // Modelo do roteiro de célula One Flow: textos fixos de cada hora já vêm prontos,
   // o que muda a cada semana fica entre colchetes para o admin substituir.
-  const MODELO_CELULA = `**Roteiro escrito por** [nome] **e revisado pela equipe Workflow da PIB Curitiba**
-
-## Flow News
+  const MODELO_CELULA = `## Flow News
 **[NOME DO EVENTO]** - [descrição, data e link de inscrição]
 
 **[NOME DO EVENTO]** - [descrição, data e link de inscrição]
@@ -804,11 +814,12 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
       <div class="dlg-body read">
         <h2>${esc(it.titulo)}</h2>
         ${it.passagem ? `<div class="ref">${esc(it.passagem)}</div>` : ""}
+        ${effAutor(it) ? `<p class="autoria">Roteiro escrito por <strong>${esc(effAutor(it))}</strong> e revisado pela equipe <strong>Workflow</strong> da PIB Curitiba</p>` : ""}
         ${it.resumo ? `<p class="lead">${esc(it.resumo)}</p>` : ""}
         ${(it.tags || []).length ? `<div class="tagline">${it.tags.map(t => `<button type="button" class="tag" data-tag="${esc(t)}" data-close="1">#${esc(t)}</button>`).join("")}</div>` : ""}
         <div class="vozplayer" id="vozplayer" hidden></div>
         ${it.pdf ? `<div class="pdfview"><div class="pdfbar"><span><strong>${esc(it.pdf.nome || "Roteiro em PDF")}</strong>${it.pdf.paginas ? " · " + pagesTxt(it.pdf.paginas) : ""}</span><a class="btn sm" href="${esc(pdfUrl(it.id))}" target="_blank" rel="noopener">Abrir em nova aba</a></div><div class="pdfpages" id="pdfpages"><p class="dates">Carregando o PDF…</p></div></div>` : ""}
-        ${it.roteiro || !it.pdf ? `<div class="prose">${renderProse(it.roteiro) || '<p style="color:var(--muted)">Este roteiro ainda não tem conteúdo.</p>'}</div>` : ""}
+        ${it.roteiro || !it.pdf ? `<div class="prose">${renderProse(semAutoria(it.roteiro)) || '<p style="color:var(--muted)">Este roteiro ainda não tem conteúdo.</p>'}</div>` : ""}
       </div>
       <div class="dlg-foot">
         <span class="dates">${it.criadoEm ? "Criado em " + esc(fmtDate(it.criadoEm)) : ""}${it.atualizadoEm && it.atualizadoEm !== it.criadoEm ? " · editado em " + esc(fmtDate(it.atualizadoEm)) : ""}</span>
@@ -835,7 +846,10 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
           <div class="field"><label for="f-passagem">Passagem <small>livro capítulo:versículos</small></label><input id="f-passagem" maxlength="120" value="${esc(it?.passagem)}" placeholder="Ex.: Lucas 10:25-37"></div>
           <div class="field"><label for="f-data">Data da célula <small>dia do encontro</small></label><input id="f-data" type="date" value="${esc(it ? (it.data || "") : ymd(new Date()))}"></div>
         </div>
-        <div class="field"><label for="f-tags">Temas <small>separe com espaço</small></label><input id="f-tags" maxlength="300" value="${esc((it?.tags || []).map(t => "#" + t).join(" "))}" placeholder="#amor #próximo #parábolas"></div>
+        <div class="row2">
+          <div class="field"><label for="f-autor">Escrito por <small>aparece no topo do roteiro</small></label><input id="f-autor" maxlength="120" value="${esc(it ? effAutor(it) : "")}" placeholder="Ex.: Larissa Lessa"></div>
+          <div class="field"><label for="f-tags">Temas <small>separe com espaço</small></label><input id="f-tags" maxlength="300" value="${esc((it?.tags || []).map(t => "#" + t).join(" "))}" placeholder="#amor #próximo #parábolas"></div>
+        </div>
         <div class="field"><label for="f-pdf">Roteiro pronto em PDF <small>opcional · até 20 MB · o texto do PDF entra na busca</small></label><div class="pdfbox" id="pdfbox"></div><input type="file" id="f-pdf" accept="application/pdf,.pdf" hidden></div>
         <div class="field"><label for="f-resumo">Resumo <small>uma ou duas frases</small></label><textarea id="f-resumo" rows="2" maxlength="400">${esc(it?.resumo)}</textarea></div>
         <div class="field">
@@ -867,6 +881,7 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
     fd.append("titulo", titulo);
     fd.append("passagem", $("f-passagem").value.trim());
     fd.append("data", $("f-data").value || "");
+    fd.append("autor", $("f-autor").value.trim() || autorNoTexto($("f-roteiro").value));
     fd.append("tags", JSON.stringify(parseTags($("f-tags").value)));
     fd.append("resumo", $("f-resumo").value.trim());
     const texto = $("f-roteiro").value.replace(/\s+$/, "");
@@ -1017,6 +1032,8 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
       const r = await readPdfFile(file);
       if (pdfDraft.file !== file) return;
       pdfDraft.text = r.text; pdfDraft.pages = r.pages;
+      const fa = $("f-autor"), autor = autorNoTexto(r.text);
+      if (fa && autor && !fa.value.trim()) fa.value = autor;
       if (!r.text) pdfDraft.note = "Parece um PDF escaneado: ele será anexado, mas o texto não entra na busca.";
     } catch (ex) {
       if (pdfDraft.file !== file) return;
@@ -1084,11 +1101,12 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
     write(`${effDate(it) ? fmtDia(effDate(it)) + "  ·  " : ""}Roteiros células One Flow`, { size: 9, color: BLUE, gap: 10 });
     write(it.titulo, { size: 20, style: "bold", lh: 1.25 });
     if (it.passagem) write(it.passagem, { color: MUTED, gap: 8 });
+    if (effAutor(it)) write(`Roteiro escrito por ${effAutor(it)} e revisado pela equipe Workflow da PIB Curitiba`, { size: 10, color: MUTED, gap: 8 });
     if (it.resumo) write(it.resumo, { size: 11.5, style: "italic", color: MUTED, gap: 8 });
     if (it.tags?.length) write(it.tags.map(t => "#" + t).join("   "), { size: 9.5, color: BLUE, gap: 12 });
     doc.setDrawColor(211, 218, 227); doc.line(M, y, W - M, y); y += 16;
     if (!it.roteiro) write("Este roteiro ainda não tem conteúdo.", { style: "italic", color: MUTED });
-    String(it.roteiro || "").replace(/\r/g, "").split("\n").forEach(raw => {
+    semAutoria(it.roteiro).replace(/\r/g, "").split("\n").forEach(raw => {
       const l = raw.trim(); let m;
       if (!l) { y += 4; return; }
       if ((m = l.match(/^#{1,3}\s+(.*)/))) { y += 8; ensure(44); write(strip(m[1]).toUpperCase(), { size: 9.5, style: "bold", color: BLUE }); return; }
@@ -1376,6 +1394,7 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
         const fd = new FormData();
         fd.append("titulo", titleFromFile(x.file.name));
         fd.append("data", dateFromName(x.file.name));
+        fd.append("autor", autorNoTexto(text));
         fd.append("tags", JSON.stringify(tags));
         fd.append("roteiro", "");
         fd.append("pdf", x.file, x.file.name);

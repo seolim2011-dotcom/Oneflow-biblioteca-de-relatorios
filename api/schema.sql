@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS roteiros (
   tags          TEXT         NOT NULL,
   resumo        VARCHAR(400) NOT NULL DEFAULT '',
   data_celula   DATE         NULL,
+  autor         VARCHAR(120) NOT NULL DEFAULT '',
   roteiro       MEDIUMTEXT   NOT NULL,
   pdf_arquivo   VARCHAR(64)  NULL,
   pdf_nome      VARCHAR(255) NULL,
