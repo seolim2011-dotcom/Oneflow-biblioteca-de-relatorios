@@ -341,6 +341,9 @@ switch ($action) {
             ];
         } elseif ($remover) {
             $dados += ['pdf_arquivo' => null, 'pdf_nome' => null, 'pdf_tamanho' => null, 'pdf_paginas' => null, 'texto_pdf' => ''];
+        } elseif ($prev && $prev['pdf_arquivo'] && raw_in('texto_pdf_novo') !== '') {
+            // Texto lido por OCR de um PDF que já estava guardado
+            $dados['texto_pdf'] = text_cut(raw_in('texto_pdf_novo'), 60000);
         }
         try {
             // As colunas vêm só das chaves fixas acima; os valores sempre vão como parâmetros

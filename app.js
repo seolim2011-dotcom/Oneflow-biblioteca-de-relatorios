@@ -897,6 +897,7 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
       fd.append("pdf_paginas", pdfDraft.pages || "");
       fd.append("texto_pdf", pdfDraft.text || "");
     } else if (pdfDraft.remove) fd.append("remover_pdf", "1");
+    else if (pdfDraft.textoNovo) fd.append("texto_pdf_novo", pdfDraft.textoNovo);
     const btn = $("f-save"); btn.disabled = true; btn.textContent = pdfDraft.file ? "Enviando PDF…" : "Salvando…";
     try {
       const { roteiro } = await api("roteiro_salvar", { form: fd });
@@ -990,16 +991,56 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
     return pdfjsP;
   }
   async function openPdf(bytes) { const lib = await getPdfjs(); return lib.getDocument({ data: bytes, isEvalSupported: false }).promise; }
-  async function readPdfFile(file) {
-    const pdf = await openPdf(new Uint8Array(await file.arrayBuffer()));
+  const limparTexto = t => String(t || "").replace(/[ \t]+/g, " ").replace(/ *\n */g, "\n").replace(/\n{3,}/g, "\n\n").trim().slice(0, 60000);
+  // Lê o texto do PDF; se ele for só imagem (escaneado, exportado como figura), usa OCR
+  async function readPdfBytes(bytes, onOcr) {
+    const pdf = await openPdf(bytes);
     try {
       let out = "";
       for (let i = 1; i <= pdf.numPages && out.length < 60000; i++) {
         const tc = await (await pdf.getPage(i)).getTextContent();
         out += tc.items.map(x => (x.str || "") + (x.hasEOL ? "\n" : " ")).join("") + "\n\n";
       }
-      return { text: out.replace(/[ \t]+/g, " ").replace(/ *\n */g, "\n").replace(/\n{3,}/g, "\n\n").trim().slice(0, 60000), pages: pdf.numPages };
+      let text = limparTexto(out), ocr = false;
+      if (text.replace(/\s+/g, "").length < 40) {
+        try { text = limparTexto(await ocrPdf(pdf, onOcr)); ocr = !!text; } catch (e) { /* sem OCR: segue sem texto */ }
+      }
+      return { text, pages: pdf.numPages, ocr };
     } finally { pdf.destroy(); }
+  }
+  const readPdfFile = async (file, onOcr) => readPdfBytes(new Uint8Array(await file.arrayBuffer()), onOcr);
+
+  // ---------- OCR (Tesseract): ler o texto de PDFs que são só imagem ----------
+  const OCR = {
+    script: "https://cdn.jsdelivr.net/npm/tesseract.js@6.0.1/dist/tesseract.min.js",
+    sri: "sha384-r1ru3tcf6FhnCFR4B7pIFG+BhFF9LlFtz/P1y4pblWn3AGs9y3lBx5SKLNf4+rED",
+    workerPath: "https://cdn.jsdelivr.net/npm/tesseract.js@6.0.1/dist/worker.min.js",
+    corePath: "https://cdn.jsdelivr.net/npm/tesseract.js-core@6.0.0",
+    langPath: "https://cdn.jsdelivr.net/npm/@tesseract.js-data/por@1.0.0/4.0.0_best_int"
+  };
+  let ocrWorkerP = null;
+  function getOcr() {
+    if (!ocrWorkerP) ocrWorkerP = loadScript(OCR.script, OCR.sri)
+      .then(() => window.Tesseract.createWorker("por", 1, { workerPath: OCR.workerPath, corePath: OCR.corePath, langPath: OCR.langPath, gzip: true }))
+      .catch(e => { ocrWorkerP = null; throw e; });
+    return ocrWorkerP;
+  }
+  async function ocrPdf(pdf, onProgress) {
+    const worker = await getOcr();
+    const max = Math.min(pdf.numPages, 10);
+    let out = "";
+    for (let i = 1; i <= max; i++) {
+      if (onProgress) onProgress(i, max);
+      const page = await pdf.getPage(i);
+      const vp = page.getViewport({ scale: 2 });
+      const c = document.createElement("canvas");
+      c.width = Math.floor(vp.width); c.height = Math.floor(vp.height);
+      // intent "print": desenha sem esperar a tela pintar (funciona mesmo com a aba em segundo plano)
+      await page.render({ canvasContext: c.getContext("2d"), viewport: vp, intent: "print" }).promise;
+      const { data } = await worker.recognize(c);
+      out += (data && data.text ? data.text : "") + "\n\n";
+    }
+    return out;
   }
   const titleFromFile = name => String(name || "").replace(/\.pdf$/i, "").replace(/[_]+/g, " ")
     .replace(/^\s*roteiro\s+(?:de\s+c[ée]lula\s+)?(?:one\s*flow)?\s*/i, "")
@@ -1013,9 +1054,15 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
     const d = pdfDraft;
     const trocar = `<button type="button" class="btn sm" data-act="pdf-pick">Trocar</button><button type="button" class="btn sm danger" data-act="pdf-remove">Remover</button>`;
     let info, acts = trocar;
-    if (d.file && d.reading) { info = `<strong>${esc(d.file.name)}</strong><span>Lendo o PDF…</span>`; acts = ""; }
+    if (d.reading) { info = `<strong>${esc(d.file ? d.file.name : (it?.pdf?.nome || "Roteiro em PDF"))}</strong><span>${esc(d.ocrMsg || "Lendo o PDF…")}</span>`; acts = ""; }
     else if (d.file) info = `<strong>${esc(d.file.name)}</strong><span>${[pagesTxt(d.pages), fmtSize(d.file.size), "será enviado ao salvar"].filter(Boolean).join(" · ")}</span>${d.note ? `<span>${esc(d.note)}</span>` : ""}`;
-    else if (it?.pdf && !d.remove) info = `<strong>${esc(it.pdf.nome || "Roteiro em PDF")}</strong><span>${[pagesTxt(it.pdf.paginas), it.pdf.tamanho ? fmtSize(it.pdf.tamanho) : ""].filter(Boolean).join(" · ") || "PDF anexado"}</span>`;
+    else if (it?.pdf && !d.remove) {
+      info = `<strong>${esc(it.pdf.nome || "Roteiro em PDF")}</strong><span>${[pagesTxt(it.pdf.paginas), it.pdf.tamanho ? fmtSize(it.pdf.tamanho) : ""].filter(Boolean).join(" · ") || "PDF anexado"}</span>${d.note ? `<span>${esc(d.note)}</span>` : ""}`;
+      if (!it.textoPdf && d.textoNovo == null) {
+        info += `<span>Este PDF é só imagem: o texto dele não entra na busca.</span>`;
+        acts = `<button type="button" class="btn sm" data-act="pdf-ocr">Ler o texto (OCR)</button>` + trocar;
+      }
+    }
     else {
       info = `<strong>Nenhum PDF anexado</strong><span>${d.remove ? "O PDF atual será removido ao salvar. " : ""}Escolha um arquivo ou arraste para cá.</span>`;
       acts = `<button type="button" class="btn sm" data-act="pdf-pick">Escolher PDF</button>`;
@@ -1023,21 +1070,47 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
     box.innerHTML = `<div class="info">${info}</div><div class="acts">${acts}</div>`;
   }
 
+  // OCR de um PDF que já está na biblioteca (enviado antes, só imagem)
+  async function ocrPdfGuardado() {
+    const it = openId ? items.find(x => x.id === openId) : null;
+    if (!it?.pdf || pdfDraft.reading) return;
+    pdfDraft.reading = true; pdfDraft.ocrMsg = "Baixando o PDF…"; renderPdfBox();
+    try {
+      const res = await fetch(pdfUrl(it.id), { credentials: "same-origin" });
+      if (!res.ok) throw new Error("http");
+      const r = await readPdfBytes(new Uint8Array(await res.arrayBuffer()), (i, n) => {
+        pdfDraft.ocrMsg = `Lendo o texto com OCR (página ${i} de ${n})… Na primeira vez, baixa uns 5 MB.`; renderPdfBox();
+      });
+      pdfDraft.textoNovo = r.text || "";
+      pdfDraft.note = r.text ? "Texto lido. Clique em “Salvar roteiro” para guardar." : "Não foi possível ler texto neste PDF.";
+      const fa = $("f-autor"), autor = autorNoTexto(r.text);
+      if (fa && autor && !fa.value.trim()) fa.value = autor;
+    } catch (e) {
+      pdfDraft.note = "Não foi possível ler o PDF agora. Tente de novo.";
+    }
+    pdfDraft.reading = false; pdfDraft.ocrMsg = "";
+    renderPdfBox();
+  }
   async function handlePdfFile(file) {
     const err = $("f-err");
     if (!file) return;
     if (!/\.pdf$/i.test(file.name) && file.type !== "application/pdf") { err.textContent = "Escolha um arquivo PDF."; return; }
     if (file.size > 20 * 1048576) { err.textContent = "O PDF passa de 20 MB. Comprima o arquivo e tente de novo."; return; }
     err.textContent = "";
-    pdfDraft = { file, text: null, pages: null, remove: false, reading: true, note: "" };
+    pdfDraft = { file, text: null, pages: null, remove: false, reading: true, note: "", ocrMsg: "" };
     const t = $("f-titulo"); if (t && !t.value.trim()) t.value = titleFromFile(file.name);
     const fdata = $("f-data"), dn = dateFromName(file.name);
     if (fdata && dn && (!fdata.value || fdata.value === ymd(new Date()))) fdata.value = dn;
     renderPdfBox();
     try {
-      const r = await readPdfFile(file);
+      const r = await readPdfFile(file, (i, n) => {
+        if (pdfDraft.file !== file) return;
+        pdfDraft.ocrMsg = `É um PDF de imagem: lendo o texto com OCR (página ${i} de ${n})… Na primeira vez, baixa uns 5 MB.`;
+        renderPdfBox();
+      });
       if (pdfDraft.file !== file) return;
       pdfDraft.text = r.text; pdfDraft.pages = r.pages;
+      if (r.ocr) pdfDraft.note = "Texto lido da imagem (OCR). Confira o nome em “Escrito por”.";
       const fa = $("f-autor"), autor = autorNoTexto(r.text);
       if (fa && autor && !fa.value.trim()) fa.value = autor;
       if (!r.text) pdfDraft.note = "Parece um PDF escaneado: ele será anexado, mas o texto não entra na busca.";
@@ -1394,7 +1467,7 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
       if (stop) { x.st = "Não importado"; continue; }
       x.st = "Lendo…"; renderImportList();
       let text = "", pages = null;
-      try { const r = await readPdfFile(x.file); text = r.text; pages = r.pages; } catch (e) {}
+      try { const r = await readPdfFile(x.file, (i, n) => { x.st = `Lendo imagem ${i}/${n}…`; renderImportList(); }); text = r.text; pages = r.pages; } catch (e) {}
       x.st = "Enviando…"; renderImportList();
       try {
         const fd = new FormData();
@@ -1477,6 +1550,7 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
     else if (act === "clear") { qEl.value = ""; selTags.clear(); testament = ""; dateFrom = ""; dateTo = ""; syncSeg(); render(); }
     else if (act === "cleartags") { selTags.clear(); render(); }
     else if (act === "pdf-pick") $("f-pdf")?.click();
+    else if (act === "pdf-ocr") ocrPdfGuardado();
     else if (act === "pdf-remove") {
       if (pdfDraft.file) pdfDraft = { file: null, text: null, pages: null, remove: pdfDraft.remove, reading: false, note: "" };
       else pdfDraft.remove = true;
