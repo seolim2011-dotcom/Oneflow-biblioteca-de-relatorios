@@ -514,7 +514,51 @@
     if (dlg.open) closeDlg();
     renderAccount(); render();
     toast(area === "admin" ? "Área do admin: você pode adicionar e excluir roteiros" : "Área do usuário: leitura e download");
+    completarPdfsSemTexto();
   }));
+
+  // ---------- PDFs em imagem: o admin completa o texto em segundo plano ----------
+  // Lê com OCR os PDFs guardados sem texto e salva o texto, o autor e (pela Introdução) o resumo do cartão.
+  // Cada PDF é tentado uma vez por aparelho, para não repetir se a imagem não tiver texto legível.
+  let completando = false;
+  async function completarPdfsSemTexto() {
+    if (completando || !canWriteNow()) return;
+    let tentados = {};
+    try { tentados = JSON.parse(localStorage.getItem("bib-ocr-tentados") || "{}") || {}; } catch (e) {}
+    const chave = it => it.id + ":" + (it.pdf?.nome || "");
+    const fila = items.filter(it => it.pdf && !it.textoPdf && !tentados[chave(it)]);
+    if (!fila.length) return;
+    completando = true;
+    toast(`Lendo o texto de ${fila.length} ${fila.length === 1 ? "PDF em imagem" : "PDFs em imagem"}…`);
+    let ok = 0;
+    for (const it of fila) {
+      tentados[chave(it)] = 1;
+      try { localStorage.setItem("bib-ocr-tentados", JSON.stringify(tentados)); } catch (e) {}
+      try {
+        const res = await fetch(pdfUrl(it.id), { credentials: "same-origin" });
+        if (!res.ok) continue;
+        const r = await readPdfBytes(new Uint8Array(await res.arrayBuffer()));
+        if (!r.text) continue;
+        const fd = new FormData();
+        fd.append("id", it.id);
+        fd.append("titulo", it.titulo);
+        fd.append("passagem", it.passagem || "");
+        fd.append("data", it.data || "");
+        fd.append("autor", it.autor || autorNoTexto(r.text));
+        fd.append("tags", JSON.stringify(it.tags || []));
+        fd.append("resumo", it.resumo || "");
+        fd.append("roteiro", it.roteiro || "");
+        fd.append("texto_pdf_novo", r.text);
+        await api("roteiro_salvar", { form: fd });
+        ok++;
+      } catch (e) { /* segue para o próximo */ }
+    }
+    completando = false;
+    if (ok) {
+      toast(`${ok} ${ok === 1 ? "roteiro completado" : "roteiros completados"} com o texto do PDF`);
+      loadItems();
+    }
+  }
 
   // ---------- Dados ----------
   async function loadItems() {
@@ -532,6 +576,7 @@
       if (!cur) closeDlg(); else if (sig(cur) !== openSig) openRead(openId);
     }
     if (firstHash) { firstHash = false; openFromHash(); }
+    completarPdfsSemTexto();
   }
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden && me && started && !importing && Date.now() - lastLoad > 60000) loadItems();
