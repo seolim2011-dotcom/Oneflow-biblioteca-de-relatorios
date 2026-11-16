@@ -105,9 +105,17 @@
   function limparTitulo(t) {
     return /^\s*roteiro\s+(?:de\s+c[ée]lula\s+)?one\s*flow\b/i.test(t) ? titleFromFile(t) : t;
   }
-  // Prévia do PDF no cartão sem a frase "Roteiro escrito por … PIB Curitiba" (o autor já aparece em "por …")
-  const previaPdf = t => String(t || "").replace(/roteiro\s+escrito\s+por[\s\S]{0,240}?pib\s+curitiba\.?/i, "")
-    .replace(/^\s*flow\s+news\s*/i, "").replace(/\s+/g, " ").trim().slice(0, 220);
+  function resumoIntroducao(it) {
+    if (it.resumo) return it.resumo;
+    const texto = String(it.roteiro || it.textoPdf || "").replace(/\*\*|__/g, "").replace(/^#{1,3}\s+|^>\s?/gm, "");
+    const m = /introdu[çc][ãa]o\s*:?\s*([\s\S]{20,900})/i.exec(texto);
+    if (!m) return "";
+    let t = m[1].replace(/\s+/g, " ").trim();
+    // para antes do primeiro ponto do estudo ("1. A CONSTÂNCIA DE DEUS…")
+    t = t.replace(/\s+1\s*[.)]\s+\S[\s\S]*$/, "").trim();
+    if (/^\[.*\]$/.test(t)) return ""; // ainda é o texto do modelo "[texto da introdução]"
+    return t.length > 230 ? t.slice(0, 230).replace(/\s+\S*$/, "") + "…" : t;
+  }
   const RE_AUTORIA = /roteiro\s+escrito\s+por\s*\**\s*([^*\n]+?)(?:\s+|\s*\*+\s*)e\s+revisado/i;
   function autorNoTexto(texto) {
     const m = RE_AUTORIA.exec(String(texto || ""));
@@ -635,9 +643,9 @@
       <button type="button" class="card" data-id="${esc(it.id)}">
         <span class="card-top"><span class="num">${effDate(it) ? fmtDia(effDate(it)) : ""}</span><span class="right">${it.pdf ? '<span class="pdfbadge">PDF</span>' : ""}<span class="testament">${it._p ? (it._p.t === "AT" ? "ANTIGO T." : "NOVO T.") : ""}</span></span></span>
         <h2>${highlight(it.titulo, pq.words)}</h2>
-        ${it.passagem ? `<span class="ref">${highlight(it.passagem, pq.words)}</span>` : ""}
         ${effAutor(it) ? `<span class="porautor">por ${highlight(effAutor(it), pq.words)}</span>` : ""}
-        ${it.resumo ? `<p class="resumo">${highlight(it.resumo, pq.words)}</p>` : previaPdf(it.textoPdf) ? `<p class="resumo">${highlight(previaPdf(it.textoPdf), pq.words)}</p>` : ""}
+        ${it.passagem ? `<span class="ref">${highlight(it.passagem, pq.words)}</span>` : ""}
+        ${resumoIntroducao(it) ? `<p class="resumo">${highlight(resumoIntroducao(it), pq.words)}</p>` : ""}
         ${(it.tags || []).length ? `<span class="mini">${it.tags.map(t => "#" + esc(t)).join(" ")}</span>` : ""}
       </button>`;
     // Todos os quadros numa grade só, na ordem escolhida (por padrão, data mais recente primeiro)
