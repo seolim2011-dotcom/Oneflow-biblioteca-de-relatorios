@@ -517,6 +517,44 @@
     completarPdfsSemTexto();
   }));
 
+  // ---------- Barra lateral: recolher (computador), trilho de ícones (tablet) e menu (celular) ----------
+  const shell = $("app");
+  const mqCelular = window.matchMedia("(max-width: 760px)");
+  const mqTablet = window.matchMedia("(min-width: 761px) and (max-width: 1023px)");
+  function aplicarBarra() {
+    let recolhida = false;
+    try { recolhida = localStorage.getItem("bib-barra") === "recolhida"; } catch (e) {}
+    shell.classList.toggle("collapsed", !mqCelular.matches && (recolhida || mqTablet.matches));
+    $("sb-collapse").setAttribute("aria-label", shell.classList.contains("collapsed") ? "Abrir menu" : "Recolher menu");
+    $("sb-collapse").title = $("sb-collapse").getAttribute("aria-label");
+    if (!mqCelular.matches) fecharMenu();
+  }
+  function abrirMenu() {
+    document.body.classList.add("nav-open");
+    $("sb-backdrop").hidden = false;
+    $("menu-btn").setAttribute("aria-expanded", "true");
+    $("tab-" + mode)?.focus();
+  }
+  function fecharMenu() {
+    if (!document.body.classList.contains("nav-open")) return;
+    document.body.classList.remove("nav-open");
+    $("sb-backdrop").hidden = true;
+    $("menu-btn").setAttribute("aria-expanded", "false");
+  }
+  $("sb-collapse").addEventListener("click", () => {
+    const recolher = !shell.classList.contains("collapsed");
+    try { localStorage.setItem("bib-barra", recolher ? "recolhida" : "aberta"); } catch (e) {}
+    if (mqTablet.matches && !recolher) shell.classList.remove("collapsed"); else aplicarBarra();
+  });
+  $("menu-btn").addEventListener("click", () => document.body.classList.contains("nav-open") ? fecharMenu() : abrirMenu());
+  $("sb-backdrop").addEventListener("click", fecharMenu);
+  document.addEventListener("keydown", e => { if (e.key === "Escape") fecharMenu(); });
+  // No celular, escolher um item do menu fecha o menu
+  $("sidebar").addEventListener("click", e => { if (e.target.closest(".sb-item") && mqCelular.matches) setTimeout(fecharMenu, 0); });
+  mqCelular.addEventListener?.("change", aplicarBarra);
+  mqTablet.addEventListener?.("change", aplicarBarra);
+  aplicarBarra();
+
   // ---------- PDFs em imagem: o admin completa o texto em segundo plano ----------
   // Lê com OCR os PDFs guardados sem texto e salva o texto, o autor e (pela Introdução) o resumo do cartão.
   // Cada PDF é tentado uma vez por aparelho, para não repetir se a imagem não tiver texto legível.
@@ -657,6 +695,7 @@
     $("clear").hidden = !q;
     const pq = mode === "busca" ? parseQuery(q) : { tags: [], words: [] };
     $("new").hidden = !canWriteNow();
+    $("sb-admin").hidden = !canWriteNow();
     $("import").hidden = !canWriteNow();
     $("users").hidden = !canWriteNow();
 
@@ -768,10 +807,12 @@
   function setMode(m) {
     mode = MODES.includes(m) ? m : "busca";
     MODES.forEach(k => {
-      $("tab-" + k).setAttribute("aria-selected", String(k === mode));
-      $("tab-" + k).tabIndex = k === mode ? 0 : -1;
+      const b = $("tab-" + k);
+      b.classList.toggle("on", k === mode);
+      if (k === mode) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
       $("panel-" + k).hidden = k !== mode;
     });
+    fecharMenu();
     try { localStorage.setItem("bib-mode", mode); } catch (e) {}
     render();
   }
@@ -1643,13 +1684,6 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
   $("tab-datas").addEventListener("click", () => setMode("datas"));
   $("dfrom").addEventListener("change", e => { dateFrom = e.target.value || ""; if (dateFrom && dateTo && dateTo < dateFrom) dateTo = dateFrom; render(); });
   $("dto").addEventListener("change", e => { dateTo = e.target.value || ""; if (dateFrom && dateTo && dateTo < dateFrom) dateFrom = dateTo; render(); });
-  document.querySelector(".tabs").addEventListener("keydown", e => {
-    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
-      e.preventDefault();
-      const i = MODES.indexOf(mode), m = MODES[(i + (e.key === "ArrowRight" ? 1 : MODES.length - 1)) % MODES.length];
-      setMode(m); $("tab-" + m).focus();
-    }
-  });
   $("tq").addEventListener("input", render);
   $("tagmore").addEventListener("click", () => {
     tagsOpen = !tagsOpen;

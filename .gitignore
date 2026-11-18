@@ -8,3 +8,5 @@ biblioteca-roteiros.html
 .claude/
 .DS_Store
 Thumbs.db
+# Referências visuais (imagens de terceiros): só locais, não vão para o GitHub nem para o site
+referencias/
