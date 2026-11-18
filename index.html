@@ -12,15 +12,16 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap">
-<script src="prefs.js?v=202611181424"></script>
-<link rel="stylesheet" href="style.css?v=202611181424">
+<script src="prefs.js?v=202611181530"></script>
+<link rel="stylesheet" href="style.css?v=202611181530">
 </head>
 <body>
 
 <!-- Aviso de configuração (aparece só enquanto o config.js não foi preenchido) -->
 <div class="login" id="setup" hidden>
   <div class="login-card">
-    <div class="brand"><span class="eyebrow">Workflow</span><h1>Roteiros células One Flow</h1></div>
+    <div class="wf-badge"><span class="wf-lockup" role="img" aria-label="Workflow Roteiros"><span class="wf-mark"></span><span class="wf-sub" aria-hidden="true"><span>R</span><span>O</span><span>T</span><span>E</span><span>I</span><span>R</span><span>O</span><span>S</span></span></span></div>
+    <div class="brand"><h1>Roteiros células One Flow</h1></div>
     <p id="setup-msg">Não foi possível abrir a biblioteca agora. Verifique a internet e recarregue a página.</p>
   </div>
 </div>
@@ -28,7 +29,8 @@
 <!-- Login -->
 <div class="login" id="login" hidden>
   <div class="login-card">
-    <div class="brand"><span class="eyebrow">Workflow</span><h1>Roteiros células One Flow</h1></div>
+    <div class="wf-badge"><span class="wf-lockup" role="img" aria-label="Workflow Roteiros"><span class="wf-mark"></span><span class="wf-sub" aria-hidden="true"><span>R</span><span>O</span><span>T</span><span>E</span><span>I</span><span>R</span><span>O</span><span>S</span></span></span></div>
+    <div class="brand"><h1>Roteiros células One Flow</h1></div>
     <p>Entre com o e-mail e a senha que o administrador cadastrou para você.</p>
     <form id="login-form" novalidate>
       <div class="field"><label for="l-email">E-mail</label><input id="l-email" type="email" autocomplete="username" required></div>
@@ -46,7 +48,8 @@
 <!-- Definir senha (convite ou recuperação) -->
 <div class="login" id="newpass" hidden>
   <div class="login-card">
-    <div class="brand"><span class="eyebrow">Workflow</span><h1>Defina sua senha</h1></div>
+    <div class="wf-badge"><span class="wf-lockup" role="img" aria-label="Workflow Roteiros"><span class="wf-mark"></span><span class="wf-sub" aria-hidden="true"><span>R</span><span>O</span><span>T</span><span>E</span><span>I</span><span>R</span><span>O</span><span>S</span></span></span></div>
+    <div class="brand"><h1>Defina sua senha</h1></div>
     <p>Você entrou com uma senha provisória. Crie a sua senha para continuar.</p>
     <form id="np-form" novalidate>
       <div class="field"><label for="np-pass">Nova senha <small>mínimo de 8 caracteres</small></label><input id="np-pass" type="password" autocomplete="new-password" required></div>
@@ -60,6 +63,7 @@
 <!-- Convite por link -->
 <div class="login" id="convite" hidden>
   <div class="login-card">
+    <div class="wf-badge"><span class="wf-lockup" role="img" aria-label="Workflow Roteiros"><span class="wf-mark"></span><span class="wf-sub" aria-hidden="true"><span>R</span><span>O</span><span>T</span><span>E</span><span>I</span><span>R</span><span>O</span><span>S</span></span></span></div>
     <div class="brand"><span class="eyebrow">Convite</span><h1>Roteiros células One Flow</h1></div>
     <p id="cv-text">Carregando o convite…</p>
     <form id="cv-form" novalidate hidden>
@@ -79,7 +83,7 @@
   <!-- Celular: barra de cima com o botão do menu -->
   <div class="mbar">
     <button class="mbar-btn" id="menu-btn" type="button" aria-label="Abrir menu" aria-controls="sidebar" aria-expanded="false"><svg class="sb-ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
-    <span class="mbar-title"><img src="favicon.svg" alt="" width="26" height="26"> Roteiros One Flow</span>
+    <span class="mbar-title"><span class="wf-lockup" role="img" aria-label="Workflow Roteiros"><span class="wf-mark"></span><span class="wf-sub" aria-hidden="true"><span>R</span><span>O</span><span>T</span><span>E</span><span>I</span><span>R</span><span>O</span><span>S</span></span></span></span>
   </div>
   <div class="sb-backdrop" id="sb-backdrop" hidden></div>
 
@@ -88,7 +92,7 @@
     <div class="sb-panel">
       <div class="sb-top">
         <img class="sb-logo" src="favicon.svg" alt="" width="36" height="36">
-        <span class="sb-brand sb-label"><strong>Roteiros</strong><small>células One Flow</small></span>
+        <span class="wf-lockup sb-label" role="img" aria-label="Workflow Roteiros"><span class="wf-mark"></span><span class="wf-sub" aria-hidden="true"><span>R</span><span>O</span><span>T</span><span>E</span><span>I</span><span>R</span><span>O</span><span>S</span></span></span>
         <button class="sb-collapse" id="sb-collapse" type="button" aria-label="Recolher menu" title="Recolher menu"><svg class="sb-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg></button>
       </div>
 
@@ -196,6 +200,6 @@
 <dialog id="dlg" aria-label="Roteiro"><div class="dlg" id="dlg-inner"></div></dialog>
 <div class="toast" id="toast" role="status" hidden></div>
 
-<script src="app.js?v=202611181424"></script>
+<script src="app.js?v=202611181530"></script>
 </body>
 </html>

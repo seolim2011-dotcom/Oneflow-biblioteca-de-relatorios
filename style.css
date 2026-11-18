@@ -552,3 +552,14 @@ dialog { width: min(760px, calc((100vw - 24px) / var(--z, 1))); max-height: calc
   body.nav-open { overflow: hidden; }
 }
 :root[data-movimento="reduzido"] .sidebar, :root[data-movimento="reduzido"] .sb-collapse svg { transition: none !important; }
+
+/* ============ Marca Workflow + roteiros ============ */
+.wf-lockup { --wf-w: 116px; display: inline-flex; flex-direction: column; gap: 6px; width: var(--wf-w); flex: none; color: #fff; }
+.wf-mark { display: block; width: 100%; aspect-ratio: 360 / 80; background: currentColor; forced-color-adjust: none;
+  -webkit-mask: url(logo-workflow.png) center / contain no-repeat; mask: url(logo-workflow.png) center / contain no-repeat; }
+.wf-sub { display: flex; justify-content: space-between; padding-inline: 2%; font-size: calc(var(--wf-w) * .09); font-weight: 600; line-height: 1; color: var(--wf-sub, #9fc0e0); }
+.sb-top .wf-lockup { margin-left: 6px; }
+.shell:not(.collapsed) .sb-logo { display: none; }
+.mbar-title .wf-lockup { --wf-w: 96px; color: var(--ink); --wf-sub: var(--accent); }
+.wf-badge { display: grid; place-items: center; padding: 26px 20px 24px; border-radius: 14px; background: linear-gradient(170deg, var(--sb-1) 0%, var(--sb-2) 100%); }
+.wf-badge .wf-lockup { --wf-w: 172px; gap: 9px; }
