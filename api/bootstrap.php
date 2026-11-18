@@ -157,6 +157,23 @@ function ensure_convites(): void
     $ok = true;
 }
 
+function ensure_favoritos(): void
+{
+    static $ok = false;
+    if ($ok) return;
+    if (!db()->query("SHOW TABLES LIKE 'favoritos'")->fetch()) create_tables();
+    $ok = true;
+}
+
+// Ids dos roteiros que a pessoa favoritou
+function favoritos_de(int $uid): array
+{
+    ensure_favoritos();
+    $st = db()->prepare('SELECT roteiro_id FROM favoritos WHERE usuario_id = ? ORDER BY criado_em DESC');
+    $st->execute([$uid]);
+    return array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+}
+
 function find_convite(string $token, bool $lock = false): ?array
 {
     if (!preg_match('/^[a-f0-9]{64}$/', $token)) return null;

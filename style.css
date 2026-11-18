@@ -563,3 +563,30 @@ dialog { width: min(760px, calc((100vw - 24px) / var(--z, 1))); max-height: calc
 .mbar-title .wf-lockup { --wf-w: 96px; color: var(--ink); --wf-sub: var(--accent); }
 .wf-badge { display: grid; place-items: center; padding: 26px 20px 24px; border-radius: 14px; background: linear-gradient(170deg, var(--sb-1) 0%, var(--sb-2) 100%); }
 .wf-badge .wf-lockup { --wf-w: 172px; gap: 9px; }
+
+/* ============ Favoritos ============ */
+:root { --star: #e8a33d; }
+.cell { position: relative; min-width: 0; height: 100%; }
+.cell .card { width: 100%; }
+.cell .card-top { padding-right: 34px; }
+.fav { position: absolute; top: 9px; right: 9px; z-index: 1; width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: 50%;
+  background: transparent; color: var(--muted); cursor: pointer; transition: color .15s, background .15s, transform .15s; }
+.fav:hover { background: var(--accent-soft); color: var(--ink); }
+.fav:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.fav.on, .favbtn.on { color: var(--star); }
+.fav.on .star, .favbtn.on .star { fill: currentColor; }
+.fav:active { transform: scale(.9); }
+.favbtn { display: inline-flex; align-items: center; gap: 6px; }
+.favbtn .star { width: 16px; height: 16px; }
+.favbtn.on span { color: var(--ink); }
+.favhead { display: flex; align-items: center; gap: 14px; }
+.favhead > svg { flex: none; color: var(--star); fill: var(--star); }
+.favhead div { display: flex; flex-direction: column; gap: 2px; }
+.favhead strong { font-size: 16px; }
+.favhead span { color: var(--muted); font-size: 14px; }
+.empty .star { vertical-align: -3px; color: var(--star); }
+:root[data-movimento="reduzido"] .fav { transition: none; }
+@media (max-width: 760px) {
+  .fav { top: 4px; right: 4px; }
+  .cell .card-top { padding-right: 30px; }
+}

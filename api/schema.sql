@@ -51,3 +51,12 @@ CREATE TABLE IF NOT EXISTS convites (
   expira_em   DATETIME     NOT NULL,
   revogado    TINYINT(1)   NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Roteiros que cada pessoa marcou com a estrela
+CREATE TABLE IF NOT EXISTS favoritos (
+  usuario_id  INT UNSIGNED NOT NULL,
+  roteiro_id  INT UNSIGNED NOT NULL,
+  criado_em   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (usuario_id, roteiro_id),
+  INDEX idx_roteiro (roteiro_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

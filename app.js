@@ -75,7 +75,7 @@
 
   // ---------- Estado ----------
   let me = null, started = false, isAdmin = false, area = "usuario", readOnly = false;
-  let items = [], loaded = false, loadNote = "", lastLoad = 0, firstHash = true;
+  let items = [], favs = new Set(), loaded = false, loadNote = "", lastLoad = 0, firstHash = true;
   let testament = "", sortBy = "recentes", mode = "busca", selTags = new Set(), tagsOpen = false, dateFrom = "", dateTo = "";
   try { sortBy = localStorage.getItem("bib-ordem") || "recentes"; } catch (e) {}
   const canWriteNow = () => isAdmin && area === "admin" && !readOnly;
@@ -146,7 +146,7 @@
 
   function onUser(u) {
     me = u;
-    if (!u) { started = false; isAdmin = false; items = []; loaded = false; if (dlg.open) closeDlg(); show("login"); return; }
+    if (!u) { started = false; isAdmin = false; items = []; favs = new Set(); loaded = false; if (dlg.open) closeDlg(); show("login"); return; }
     if (u.trocar_senha) { show("newpass"); $("np-pass").focus(); return; }
     isAdmin = !!u.is_admin;
     let saved = null;
@@ -602,8 +602,8 @@
   async function loadItems() {
     if (!loaded) { loadNote = "Carregando roteiros…"; render(); }
     try {
-      const { roteiros } = await api("roteiros");
-      items = (roteiros || []).map(fromRow); loaded = true; loadNote = ""; lastLoad = Date.now();
+      const { roteiros, favoritos } = await api("roteiros");
+      items = (roteiros || []).map(fromRow); favs = new Set((favoritos || []).map(String)); loaded = true; loadNote = ""; lastLoad = Date.now();
     } catch (e) {
       if (!loaded) { loadNote = e.erro || "Não foi possível carregar os roteiros."; render(); }
       return;
@@ -634,6 +634,7 @@
   }
   function matches(it, pq) {
     if (testament && it._p?.t !== testament) return false;
+    if (mode === "favoritos") return favs.has(it.id);
     if (mode === "datas") {
       const d = effDate(it);
       if (dateFrom && (!d || d < dateFrom)) return false;
@@ -689,6 +690,45 @@
     return arr;
   }
 
+  // ---------- Favoritos ----------
+  const STAR = '<svg class="star" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.8l2.85 5.78 6.38.93-4.62 4.5 1.09 6.35L12 17.36l-5.7 3 1.09-6.35-4.62-4.5 6.38-.93z"/></svg>';
+  function favBtn(it, cls) {
+    const on = favs.has(it.id);
+    const label = (on ? "Tirar dos favoritos: " : "Favoritar: ") + it.titulo;
+    const texto = cls === "fav" ? "" : `<span>${on ? "Favorito" : "Favoritar"}</span>`;
+    return `<button type="button" class="${cls}${on ? " on" : ""}" data-fav="${esc(it.id)}" aria-pressed="${on}" aria-label="${esc(label)}" title="${on ? "Tirar dos favoritos" : "Favoritar"}">${STAR}${texto}</button>`;
+  }
+  // Atualiza as estrelas que estão na tela sem redesenhar a janela de leitura
+  function syncFavs(id) {
+    const it = items.find(x => x.id === id);
+    if (!it) return;
+    const tinhaFoco = document.activeElement?.dataset?.fav === id && listEl.contains(document.activeElement);
+    render();
+    inner.querySelectorAll(`[data-fav="${CSS.escape(id)}"]`).forEach(b => { b.outerHTML = favBtn(it, "btn favbtn"); });
+    if (tinhaFoco) listEl.querySelector(`[data-fav="${CSS.escape(id)}"]`)?.focus();
+  }
+  const favPend = new Map();
+  async function toggleFav(id) {
+    if (!items.some(x => x.id === id)) return;
+    const on = !favs.has(id);
+    if (on) favs.add(id); else favs.delete(id);
+    syncFavs(id);
+    toast(on ? "Guardado nos favoritos" : "Tirado dos favoritos");
+    // Toques rápidos seguidos: só o último vai para o servidor
+    const vez = (favPend.get(id) || 0) + 1; favPend.set(id, vez);
+    try {
+      const r = await api("favoritar", { body: { id, favorito: on ? "1" : "0" } });
+      if (favPend.get(id) !== vez) return;
+      favs = new Set((r.favoritos || []).map(String));
+      syncFavs(id);
+    } catch (e) {
+      if (favPend.get(id) !== vez) return;
+      if (on) favs.delete(id); else favs.add(id);
+      syncFavs(id);
+      toast(e.erro || "Não foi possível salvar o favorito.");
+    }
+  }
+
   // ---------- Renderização ----------
   function render() {
     const q = qEl.value;
@@ -706,6 +746,7 @@
     selTags.forEach(t => { if (loaded && !counts.has(t)) selTags.delete(t); });
     renderTags(counts);
     renderDates();
+    renderFavCount();
 
     if (!loaded) {
       listEl.innerHTML = `<div class="empty"><strong>${esc(loadNote || "Carregando roteiros…")}</strong></div>`;
@@ -718,22 +759,35 @@
       return;
     }
     const shown = sorted(items.filter(it => matches(it, pq)), pq);
+    if (mode === "favoritos" && !shown.length) {
+      $("count").textContent = "";
+      listEl.innerHTML = favs.size
+        ? `<div class="empty"><strong>Nenhum favorito neste filtro</strong><span>Mude o filtro de Antigo e Novo Testamento para ver os outros.</span></div>`
+        : `<div class="empty"><strong>Nenhum favorito ainda</strong><span>Toque na estrela ${STAR} de um roteiro para guardar ele aqui e achar rápido depois.</span></div>`;
+      return;
+    }
     $("count").textContent = shown.length === items.length ? `${items.length} ${items.length === 1 ? "roteiro" : "roteiros"}` : `Mostrando ${shown.length} de ${items.length}`;
     if (!shown.length) {
       listEl.innerHTML = `<div class="empty"><strong>Nenhum roteiro encontrado</strong><span>Tente outro termo, menos temas, ou limpe a busca.</span><button class="btn" type="button" data-act="clear">Limpar busca</button></div>`;
       return;
     }
     const card = it => `
-      <button type="button" class="card" data-id="${esc(it.id)}">
+      <div class="cell">${favBtn(it, "fav")}<button type="button" class="card" data-id="${esc(it.id)}">
         <span class="card-top"><span class="num">${effDate(it) ? fmtDia(effDate(it)) : ""}</span><span class="right">${it.pdf ? '<span class="pdfbadge">PDF</span>' : ""}<span class="testament">${it._p ? (it._p.t === "AT" ? "ANTIGO T." : "NOVO T.") : ""}</span></span></span>
         <h2>${highlight(it.titulo, pq.words)}</h2>
         ${effAutor(it) ? `<span class="porautor">por ${highlight(effAutor(it), pq.words)}</span>` : ""}
         ${it.passagem ? `<span class="ref">${highlight(it.passagem, pq.words)}</span>` : ""}
         ${resumoIntroducao(it) ? `<p class="resumo">${highlight(resumoIntroducao(it), pq.words)}</p>` : ""}
         ${(it.tags || []).length ? `<span class="mini">${it.tags.map(t => "#" + esc(t)).join(" ")}</span>` : ""}
-      </button>`;
+      </button></div>`;
     // Todos os quadros numa grade só, na ordem escolhida (por padrão, data mais recente primeiro)
     listEl.innerHTML = `<div class="grid">${shown.map(card).join("")}</div>`;
+  }
+
+  function renderFavCount() {
+    const n = items.filter(it => favs.has(it.id)).length, fc = $("favcount");
+    fc.textContent = n; fc.hidden = !n;
+    $("fsel").textContent = n ? `${n} ${n === 1 ? "roteiro marcado" : "roteiros marcados"} com a estrela. Toque na estrela de novo para tirar.` : "Toque na estrela de um roteiro para guardar ele aqui.";
   }
 
   function renderTags(counts) {
@@ -803,7 +857,7 @@
       : "Escolha um mês, um período rápido ou um intervalo de datas.";
   }
 
-  const MODES = ["busca", "temas", "datas"];
+  const MODES = ["busca", "temas", "datas", "favoritos"];
   function setMode(m) {
     mode = MODES.includes(m) ? m : "busca";
     MODES.forEach(k => {
@@ -923,7 +977,7 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
       </div>
       <div class="dlg-foot">
         <span class="dates">${it.criadoEm ? "Criado em " + esc(fmtDate(it.criadoEm)) : ""}${it.atualizadoEm && it.atualizadoEm !== it.criadoEm ? " · editado em " + esc(fmtDate(it.atualizadoEm)) : ""}</span>
-        <span style="display:flex;flex-wrap:wrap;gap:8px">${writable ? `<button class="btn danger" type="button" data-act="del">Excluir</button><button class="btn" type="button" data-act="edit">Editar</button>` : ""}${podeOuvir() && Prefs.get().voz ? '<button class="btn" type="button" data-act="ouvir" aria-pressed="false">Ouvir</button>' : ""}<button class="btn primary" type="button" data-act="download">Baixar PDF</button></span>
+        <span style="display:flex;flex-wrap:wrap;gap:8px">${writable ? `<button class="btn danger" type="button" data-act="del">Excluir</button><button class="btn" type="button" data-act="edit">Editar</button>` : ""}${favBtn(it, "btn favbtn")}${podeOuvir() && Prefs.get().voz ? '<button class="btn" type="button" data-act="ouvir" aria-pressed="false">Ouvir</button>' : ""}<button class="btn primary" type="button" data-act="download">Baixar PDF</button></span>
       </div>`;
     if (!dlg.open) dlg.showModal();
     inner.querySelector(".dlg-body").scrollTop = 0;
@@ -1616,6 +1670,8 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
     if (monthBtn) { const [y, m] = monthBtn.dataset.month.split("-").map(Number); setRange(...monthBounds(y, m - 1)); return; }
     const quickBtn = e.target.closest("[data-quick]");
     if (quickBtn) { setRange(...quickRanges()[quickBtn.dataset.quick]); return; }
+    const favEl = e.target.closest("[data-fav]");
+    if (favEl) { toggleFav(favEl.dataset.fav); return; }
     const card = e.target.closest(".card");
     if (card) { openRead(card.dataset.id); return; }
     const actEl = e.target.closest("[data-act]");
@@ -1682,6 +1738,7 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
   $("tab-busca").addEventListener("click", () => { setMode("busca"); qEl.focus(); });
   $("tab-temas").addEventListener("click", () => setMode("temas"));
   $("tab-datas").addEventListener("click", () => setMode("datas"));
+  $("tab-favoritos").addEventListener("click", () => setMode("favoritos"));
   $("dfrom").addEventListener("change", e => { dateFrom = e.target.value || ""; if (dateFrom && dateTo && dateTo < dateFrom) dateTo = dateFrom; render(); });
   $("dto").addEventListener("change", e => { dateTo = e.target.value || ""; if (dateFrom && dateTo && dateTo < dateFrom) dateFrom = dateTo; render(); });
   $("tq").addEventListener("input", render);

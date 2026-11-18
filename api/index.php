@@ -301,10 +301,24 @@ switch ($action) {
         session_out();
 
     case 'roteiros':
-        require_user();
+        $eu = require_user();
         ensure_data_celula();
         $rows = db()->query('SELECT * FROM roteiros ORDER BY id')->fetchAll();
-        out(['roteiros' => array_map('roteiro_out', $rows)]);
+        out(['roteiros' => array_map('roteiro_out', $rows), 'favoritos' => favoritos_de($eu['id'])]);
+
+    case 'favoritar':
+        // Qualquer pessoa logada pode marcar ou desmarcar a estrela de um roteiro
+        require_post();
+        $eu = require_user();
+        ensure_favoritos();
+        $id = int_in('id');
+        if (str_in('favorito') === '1') {
+            if (!find_roteiro($id)) fail('Este roteiro não existe mais.', 404);
+            db()->prepare('INSERT IGNORE INTO favoritos (usuario_id, roteiro_id) VALUES (?, ?)')->execute([$eu['id'], $id]);
+        } else {
+            db()->prepare('DELETE FROM favoritos WHERE usuario_id = ? AND roteiro_id = ?')->execute([$eu['id'], $id]);
+        }
+        out(['favoritos' => favoritos_de($eu['id'])]);
 
     case 'roteiro_salvar':
         require_post();
@@ -370,6 +384,8 @@ switch ($action) {
         $r = find_roteiro(int_in('id'));
         if ($r) {
             db()->prepare('DELETE FROM roteiros WHERE id = ?')->execute([$r['id']]);
+            ensure_favoritos();
+            db()->prepare('DELETE FROM favoritos WHERE roteiro_id = ?')->execute([$r['id']]);
             delete_pdf_file($r['pdf_arquivo']);
             delete_audio_for('r' . (int) $r['id']);
         }
@@ -448,6 +464,8 @@ switch ($action) {
         if ($id === $eu['id']) fail('Você não pode remover a si mesmo.', 422);
         revoke_invites_from($id, false);
         db()->prepare('DELETE FROM usuarios WHERE id = ?')->execute([$id]);
+        ensure_favoritos();
+        db()->prepare('DELETE FROM favoritos WHERE usuario_id = ?')->execute([$id]);
         out(['ok' => true]);
 
     case 'convites':

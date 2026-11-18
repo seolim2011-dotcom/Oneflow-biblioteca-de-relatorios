@@ -4,16 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Roteiros células One Flow</title>
-<link rel="icon" href="favicon.svg?v=202611181610" type="image/svg+xml">
-<link rel="icon" href="favicon-32.png?v=202611181610" type="image/png" sizes="32x32">
-<link rel="apple-touch-icon" href="apple-touch-icon.png?v=202611181610">
+<link rel="icon" href="favicon.svg?v=202611181730" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png?v=202611181730" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="apple-touch-icon.png?v=202611181730">
 <meta name="theme-color" content="#272f6d">
 <meta name="description" content="Biblioteca de roteiros de estudo bíblico das células One Flow.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap">
-<script src="prefs.js?v=202611181610"></script>
-<link rel="stylesheet" href="style.css?v=202611181610">
+<script src="prefs.js?v=202611181730"></script>
+<link rel="stylesheet" href="style.css?v=202611181730">
 </head>
 <body>
 
@@ -91,7 +91,7 @@
   <aside class="sidebar" id="sidebar" aria-label="Menu principal">
     <div class="sb-panel">
       <div class="sb-top">
-        <img class="sb-logo" src="favicon.svg?v=202611181610" alt="" width="36" height="36">
+        <img class="sb-logo" src="favicon.svg?v=202611181730" alt="" width="36" height="36">
         <span class="wf-lockup sb-label" role="img" aria-label="Workflow Roteiros"><span class="wf-mark"></span><span class="wf-sub" aria-hidden="true"><span>R</span><span>O</span><span>T</span><span>E</span><span>I</span><span>R</span><span>O</span><span>S</span></span></span>
         <button class="sb-collapse" id="sb-collapse" type="button" aria-label="Recolher menu" title="Recolher menu"><svg class="sb-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg></button>
       </div>
@@ -100,6 +100,7 @@
         <button class="sb-item" type="button" id="tab-busca" aria-controls="panel-busca" title="Pesquisar"><svg class="sb-ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span class="sb-label">Pesquisar</span></button>
         <button class="sb-item" type="button" id="tab-temas" aria-controls="panel-temas" title="Temas"><svg class="sb-ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/></svg><span class="sb-label">Temas</span><span class="n" id="tagcount" hidden></span></button>
         <button class="sb-item" type="button" id="tab-datas" aria-controls="panel-datas" title="Datas"><svg class="sb-ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg><span class="sb-label">Datas</span></button>
+        <button class="sb-item" type="button" id="tab-favoritos" aria-controls="panel-favoritos" title="Favoritos"><svg class="sb-ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.8l2.85 5.78 6.38.93-4.62 4.5 1.09 6.35L12 17.36l-5.7 3 1.09-6.35-4.62-4.5 6.38-.93z"/></svg><span class="sb-label">Favoritos</span><span class="n" id="favcount" hidden></span></button>
       </nav>
 
       <nav class="sb-nav" id="sb-admin" aria-label="Administração" hidden>
@@ -174,6 +175,10 @@
       <div class="dmonths" id="dmonths" aria-label="Meses com roteiros"></div>
       <div class="tagfoot"><span class="selected" id="dsel"></span></div>
     </div>
+
+    <div class="panel" id="panel-favoritos" role="tabpanel" aria-labelledby="tab-favoritos" hidden>
+      <div class="favhead"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.8l2.85 5.78 6.38.93-4.62 4.5 1.09 6.35L12 17.36l-5.7 3 1.09-6.35-4.62-4.5 6.38-.93z"/></svg><div><strong>Seus favoritos</strong><span id="fsel">Toque na estrela de um roteiro para guardar ele aqui.</span></div></div>
+    </div>
   </section>
 
   <div class="toolbar">
@@ -200,6 +205,6 @@
 <dialog id="dlg" aria-label="Roteiro"><div class="dlg" id="dlg-inner"></div></dialog>
 <div class="toast" id="toast" role="status" hidden></div>
 
-<script src="app.js?v=202611181610"></script>
+<script src="app.js?v=202611181730"></script>
 </body>
 </html>
