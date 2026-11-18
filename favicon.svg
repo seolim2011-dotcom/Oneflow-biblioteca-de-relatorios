@@ -1,6 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <title>Roteiros células One Flow</title>
-  <rect width="64" height="64" rx="14" fill="#173a63"/>
-  <path d="M32.0 5.0 L37.0 13.2 L45.5 8.6 L45.8 18.2 L55.4 18.5 L50.8 27.0 L59.0 32.0 L50.8 37.0 L55.4 45.5 L45.8 45.8 L45.5 55.4 L37.0 50.8 L32.0 59.0 L27.0 50.8 L18.5 55.4 L18.2 45.8 L8.6 45.5 L13.2 37.0 L5.0 32.0 L13.2 27.0 L8.6 18.5 L18.2 18.2 L18.5 8.6 L27.0 13.2 Z" fill="#8ec5f0"/>
-  <path fill="#173a63" fill-rule="evenodd" transform="translate(32 32.5) scale(0.8) translate(-34.75 -32)" d="M21 15.5H35.6C42.6 15.5 47 19.6 47 25.2C47 29.5 44.5 32.7 40.6 34L48.5 48.5H39.8L32.9 35.2H28.6V48.5H21Z M28.6 21.8V29H35C37.7 29 39.3 27.6 39.3 25.4C39.3 23.2 37.7 21.8 35 21.8Z"/>
+  <defs><clipPath id="o"><circle cx="32" cy="32" r="21"/></clipPath></defs>
+  <rect width="64" height="64" rx="14" fill="#272f6d"/>
+  <g clip-path="url(#o)" transform="translate(32 32) scale(1.1) translate(-32 -32)">
+    <rect x="10" y="10" width="44" height="44" fill="#fff"/>
+    <path fill="none" stroke="#272f6d" stroke-width="2.6" d="M8 16.25H22.67L26.17 14.33H56 M8 22.08H25.88L29.38 20.16H56 M8 27.62H29.08L32.58 25.7H56 M8 32.88H32.29L35.79 30.95H56 M8 38.42H35.5L39 36.5H56 M8 43.96H38.71L42.21 42.04H56 M8 49.5H41.92L45.42 47.58H56"/>
+  </g>
 </svg>
