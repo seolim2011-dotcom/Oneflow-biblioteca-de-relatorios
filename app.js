@@ -75,7 +75,7 @@
 
   // ---------- Estado ----------
   let me = null, started = false, isAdmin = false, area = "usuario", readOnly = false;
-  let items = [], favs = new Set(), loaded = false, loadNote = "", lastLoad = 0, firstHash = true;
+  let items = [], favs = new Set(), notas = [], editNota = null, loaded = false, loadNote = "", lastLoad = 0, firstHash = true;
   let testament = "", sortBy = "recentes", mode = "busca", selTags = new Set(), tagsOpen = false, dateFrom = "", dateTo = "";
   try { sortBy = localStorage.getItem("bib-ordem") || "recentes"; } catch (e) {}
   const canWriteNow = () => isAdmin && area === "admin" && !readOnly;
@@ -146,7 +146,7 @@
 
   function onUser(u) {
     me = u;
-    if (!u) { started = false; isAdmin = false; items = []; favs = new Set(); loaded = false; if (dlg.open) closeDlg(); show("login"); return; }
+    if (!u) { started = false; isAdmin = false; items = []; favs = new Set(); notas = []; editNota = null; loaded = false; if (dlg.open) closeDlg(); show("login"); return; }
     if (u.trocar_senha) { show("newpass"); $("np-pass").focus(); return; }
     isAdmin = !!u.is_admin;
     let saved = null;
@@ -614,6 +614,7 @@
       if (!cur) closeDlg(); else if (sig(cur) !== openSig) openRead(openId);
     }
     if (firstHash) { firstHash = false; openFromHash(); }
+    loadNotas();
     completarPdfsSemTexto();
   }
   document.addEventListener("visibilitychange", () => {
@@ -729,6 +730,110 @@
     }
   }
 
+  // ---------- Anotações (só de quem escreveu) ----------
+  const BOOK = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2z"/><path d="M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z"/></svg>';
+  async function loadNotas() {
+    try { notas = (await api("anotacoes")).anotacoes || []; } catch (e) { return; }
+    renderNotas();
+  }
+  const notasDe = id => notas.filter(n => String(n.roteiro_id) === String(id));
+  function notaHtml(n, comRoteiro) {
+    const nid = esc(n.id);
+    if (editNota === n.id) {
+      return `<form class="nota editing" data-nota-form="${nid}" novalidate>
+        <textarea rows="4" maxlength="5000" aria-label="Editar anotação">${esc(n.texto)}</textarea>
+        <div class="nota-foot"><span class="err" role="alert"></span><span class="nota-acts"><button class="btn sm" type="button" data-act="nota-cancel">Cancelar</button><button class="btn sm primary" type="submit">Salvar</button></span></div>
+      </form>`;
+    }
+    const it = n.roteiro_id != null ? items.find(x => x.id === String(n.roteiro_id)) : null;
+    const rot = !comRoteiro ? "" : it ? `<button type="button" class="nota-rot" data-open="${esc(it.id)}">${BOOK}${esc(it.titulo)}</button>` : `<span class="nota-rot solta">Anotação solta</span>`;
+    const quando = n.atualizado_em && n.atualizado_em !== n.criado_em ? "Editada em " + fmtDate(n.atualizado_em) : fmtDate(n.criado_em);
+    return `<article class="nota">${rot}<div class="nota-txt">${esc(n.texto)}</div>
+      <div class="nota-foot"><span class="dates">${esc(quando)}</span><span class="nota-acts"><button class="btn sm" type="button" data-act="nota-edit" data-nid="${nid}">Editar</button><button class="btn sm danger" type="button" data-act="nota-del" data-nid="${nid}">Apagar</button></span></div>
+    </article>`;
+  }
+  // Redesenha as anotações sem perder o que está sendo digitado na edição
+  function keepDraft(box, fn) {
+    const ta = box?.querySelector("[data-nota-form] textarea");
+    const draft = ta ? [ta.value, document.activeElement === ta] : null;
+    fn();
+    const nt = box?.querySelector("[data-nota-form] textarea");
+    if (nt && draft) { nt.value = draft[0]; if (draft[1]) nt.focus(); }
+  }
+  function renderNotaCount() {
+    const c = $("notacount"); c.textContent = notas.length; c.hidden = !notas.length;
+  }
+  function renderNotasLista() {
+    const sel = $("n-roteiro"), atual = sel.value;
+    const opts = items.slice().sort((a, b) => effDate(b).localeCompare(effDate(a)) || a.titulo.localeCompare(b.titulo, "pt-BR"));
+    sel.innerHTML = `<option value="">Sem roteiro (anotação solta)</option>` + opts.map(it => `<option value="${esc(it.id)}">${esc(it.titulo)}${effDate(it) ? " · " + fmtDia(effDate(it)) : ""}</option>`).join("");
+    if (opts.some(it => it.id === atual)) sel.value = atual;
+    $("count").textContent = "";
+    keepDraft(listEl, () => {
+      listEl.innerHTML = notas.length
+        ? `<div class="notas">${notas.map(n => notaHtml(n, true)).join("")}</div>`
+        : `<div class="empty"><strong>Nenhuma anotação ainda</strong><span>Escreva acima, ou abra um roteiro e use “Minhas anotações” no fim dele. Só você vê.</span></div>`;
+    });
+  }
+  function renderReadNotas() {
+    const box = $("rnotas-list");
+    if (!box || !openId) return;
+    const lista = notasDe(openId);
+    keepDraft(box, () => { box.innerHTML = lista.map(n => notaHtml(n, false)).join(""); });
+  }
+  function renderNotas() {
+    renderNotaCount();
+    if (mode === "notas") render();
+    renderReadNotas();
+  }
+  async function salvarNota(body, errEl, btn) {
+    if (!body.texto.trim()) { if (errEl) errEl.textContent = "Escreva alguma coisa antes de salvar."; return false; }
+    if (btn) btn.disabled = true;
+    try {
+      notas = (await api("anotacao_salvar", { body })).anotacoes || [];
+      if (errEl) errEl.textContent = "";
+      return true;
+    } catch (ex) {
+      if (errEl) errEl.textContent = ex.erro; else toast(ex.erro);
+      return false;
+    } finally { if (btn) btn.disabled = false; }
+  }
+  async function novaNota(e) {
+    e.preventDefault();
+    const daLeitura = e.target.id === "rnotaform";
+    const ta = daLeitura ? $("rn-texto") : $("n-texto");
+    const rid = daLeitura ? openId : $("n-roteiro").value;
+    const ok = await salvarNota({ texto: ta.value, roteiro_id: rid || "" }, daLeitura ? $("rn-err") : $("n-err"), e.target.querySelector("[type=submit]"));
+    if (!ok) return;
+    ta.value = "";
+    toast("Anotação salva. Só você vê.");
+    renderNotas();
+  }
+  async function editarNota(e) {
+    e.preventDefault();
+    const form = e.target, id = +form.dataset.notaForm;
+    const ok = await salvarNota({ id, texto: form.querySelector("textarea").value }, form.querySelector(".err"), form.querySelector("[type=submit]"));
+    if (!ok) return;
+    editNota = null;
+    toast("Anotação salva");
+    renderNotas();
+  }
+  async function apagarNota(btn) {
+    if (!armConfirm(btn, "Confirmar: apagar")) return;
+    btn.disabled = true;
+    try {
+      notas = (await api("anotacao_excluir", { body: { id: +btn.dataset.nid } })).anotacoes || [];
+      if (editNota === +btn.dataset.nid) editNota = null;
+      toast("Anotação apagada");
+      renderNotas();
+    } catch (ex) { btn.disabled = false; toast(ex.erro); }
+  }
+  function abrirEdicaoNota(id) {
+    editNota = id;
+    renderNotas();
+    document.querySelector(`[data-nota-form="${id}"] textarea`)?.focus();
+  }
+
   // ---------- Renderização ----------
   function render() {
     const q = qEl.value;
@@ -747,12 +852,15 @@
     renderTags(counts);
     renderDates();
     renderFavCount();
+    renderNotaCount();
+    document.querySelector(".toolbar").hidden = mode === "notas";
 
     if (!loaded) {
       listEl.innerHTML = `<div class="empty"><strong>${esc(loadNote || "Carregando roteiros…")}</strong></div>`;
       $("count").textContent = "";
       return;
     }
+    if (mode === "notas") { renderNotasLista(); return; }
     if (!items.length) {
       listEl.innerHTML = `<div class="empty"><strong>A estante ainda está vazia</strong><span>${canWriteNow() ? "Cada roteiro guarda título, passagem, temas com # e o estudo completo, ou um PDF pronto." : "Os roteiros aparecem aqui assim que um administrador adicionar o primeiro."}</span>${canWriteNow() ? '<button class="btn primary" type="button" data-act="new">+ Adicionar o primeiro roteiro</button>' : ""}</div>`;
       $("count").textContent = "";
@@ -857,7 +965,7 @@
       : "Escolha um mês, um período rápido ou um intervalo de datas.";
   }
 
-  const MODES = ["busca", "temas", "datas", "favoritos"];
+  const MODES = ["busca", "temas", "datas", "favoritos", "notas"];
   function setMode(m) {
     mode = MODES.includes(m) ? m : "busca";
     MODES.forEach(k => {
@@ -974,6 +1082,14 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
         <div class="vozplayer" id="vozplayer" hidden></div>
         ${it.pdf ? `<div class="pdfview"><div class="pdfbar"><span><strong>${esc(it.pdf.nome || "Roteiro em PDF")}</strong>${it.pdf.paginas ? " · " + pagesTxt(it.pdf.paginas) : ""}</span><a class="btn sm" href="${esc(pdfUrl(it.id))}" target="_blank" rel="noopener">Abrir em nova aba</a></div><div class="pdfpages" id="pdfpages"><p class="dates">Carregando o PDF…</p></div></div>` : ""}
         ${it.roteiro || !it.pdf ? `<div class="prose">${renderProse(semAutoria(it.roteiro)) || '<p style="color:var(--muted)">Este roteiro ainda não tem conteúdo.</p>'}</div>` : ""}
+        <section class="rnotas" aria-labelledby="rn-h">
+          <h3 id="rn-h">Minhas anotações <small>só você vê</small></h3>
+          <div class="notas" id="rnotas-list"></div>
+          <form class="notaform" id="rnotaform" novalidate>
+            <textarea id="rn-texto" rows="3" maxlength="5000" placeholder="Anote algo sobre este roteiro…" aria-label="Nova anotação sobre este roteiro"></textarea>
+            <div class="notaform-foot"><span class="err" id="rn-err" role="alert"></span><button class="btn primary sm" type="submit">Salvar anotação</button></div>
+          </form>
+        </section>
       </div>
       <div class="dlg-foot">
         <span class="dates">${it.criadoEm ? "Criado em " + esc(fmtDate(it.criadoEm)) : ""}${it.atualizadoEm && it.atualizadoEm !== it.criadoEm ? " · editado em " + esc(fmtDate(it.atualizadoEm)) : ""}</span>
@@ -983,6 +1099,7 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
     inner.querySelector(".dlg-body").scrollTop = 0;
     openSig = sig(it);
     if (it.pdf) renderPdfPages(it.id); else ++pdfToken;
+    renderReadNotas();
     try { history.replaceState(null, "", "#r-" + it.numero); } catch (e) {}
   }
 
@@ -1670,6 +1787,8 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
     if (monthBtn) { const [y, m] = monthBtn.dataset.month.split("-").map(Number); setRange(...monthBounds(y, m - 1)); return; }
     const quickBtn = e.target.closest("[data-quick]");
     if (quickBtn) { setRange(...quickRanges()[quickBtn.dataset.quick]); return; }
+    const openEl = e.target.closest("[data-open]");
+    if (openEl) { editNota = null; openRead(openEl.dataset.open); return; }
     const favEl = e.target.closest("[data-fav]");
     if (favEl) { toggleFav(favEl.dataset.fav); return; }
     const card = e.target.closest(".card");
@@ -1693,6 +1812,9 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
     else if (act === "az-remover") {
       if (armConfirm(actEl, "Confirmar: desligar")) api("voz_config_salvar", { body: { remover: 1 } }).then(() => { vozHumana = false; toast("Voz humana desligada"); openSettings(); }).catch(ex => toast(ex.erro));
     }
+    else if (act === "nota-edit") abrirEdicaoNota(+actEl.dataset.nid);
+    else if (act === "nota-cancel") { editNota = null; renderNotas(); }
+    else if (act === "nota-del") apagarNota(actEl);
     else if (act === "changepass") openPass();
     else if (act === "logout") { closeDlg(); logout(); }
     else if (act === "prefs-reset") { Prefs.reset(); pararVoz(); openSettings(); toast("Preferências voltaram ao padrão"); }
@@ -1728,6 +1850,8 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
     else if (e.target.id === "userform") saveUser(e);
     else if (e.target.id === "invform") createInvite(e);
     else if (e.target.id === "vozform") salvarVozAdmin(e);
+    else if (e.target.id === "notaform" || e.target.id === "rnotaform") novaNota(e);
+    else if (e.target.dataset.notaForm) editarNota(e);
   });
   $("new").addEventListener("click", () => { if (canWriteNow()) openEdit(null); });
   qEl.addEventListener("input", render);
@@ -1739,6 +1863,7 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
   $("tab-temas").addEventListener("click", () => setMode("temas"));
   $("tab-datas").addEventListener("click", () => setMode("datas"));
   $("tab-favoritos").addEventListener("click", () => setMode("favoritos"));
+  $("tab-notas").addEventListener("click", () => setMode("notas"));
   $("dfrom").addEventListener("change", e => { dateFrom = e.target.value || ""; if (dateFrom && dateTo && dateTo < dateFrom) dateTo = dateFrom; render(); });
   $("dto").addEventListener("change", e => { dateTo = e.target.value || ""; if (dateFrom && dateTo && dateTo < dateFrom) dateFrom = dateTo; render(); });
   $("tq").addEventListener("input", render);
@@ -1747,6 +1872,10 @@ Este é um momento para incentivar a célula a **anunciar** as boas novas ao mun
     render();
   });
   document.addEventListener("keydown", e => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && e.target.tagName === "TEXTAREA") {
+      const f = e.target.closest(".notaform, [data-nota-form]");
+      if (f) { e.preventDefault(); f.requestSubmit(); return; }
+    }
     if (e.key === "/" && !dlg.open && !$("app").hidden && document.activeElement !== qEl && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) { e.preventDefault(); qEl.focus(); }
   });
 

@@ -60,3 +60,15 @@ CREATE TABLE IF NOT EXISTS favoritos (
   PRIMARY KEY (usuario_id, roteiro_id),
   INDEX idx_roteiro (roteiro_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Anotações pessoais: cada pessoa só vê e mexe nas próprias (roteiro_id vazio = anotação solta)
+CREATE TABLE IF NOT EXISTS anotacoes (
+  id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  usuario_id    INT UNSIGNED NOT NULL,
+  roteiro_id    INT UNSIGNED NULL,
+  texto         TEXT         NOT NULL,
+  criado_em     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  atualizado_em DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_usuario (usuario_id, atualizado_em),
+  INDEX idx_roteiro (roteiro_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

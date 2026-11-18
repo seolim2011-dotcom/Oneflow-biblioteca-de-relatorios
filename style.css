@@ -590,3 +590,30 @@ dialog { width: min(760px, calc((100vw - 24px) / var(--z, 1))); max-height: calc
   .fav { top: 4px; right: 4px; }
   .cell .card-top { padding-right: 30px; }
 }
+
+/* ============ Anotações pessoais ============ */
+.toolbar[hidden] { display: none !important; }
+.notahead > svg { color: var(--accent); fill: none; }
+.notaform { display: flex; flex-direction: column; gap: 10px; }
+.notaform textarea, .nota textarea { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 11px 12px; background: var(--surface); resize: vertical; min-height: 84px; font-size: 15px; line-height: 1.55; }
+.notaform textarea:focus, .nota textarea:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+.notaform-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.notaform-foot select { flex: 1 1 220px; min-width: 0; max-width: 420px; border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; background: var(--surface); }
+.notaform .err:empty { display: none; }
+.notaform-foot .err { flex: 1 1 auto; }
+.notas { display: flex; flex-direction: column; gap: 12px; }
+.nota { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.nota.editing { border-color: var(--accent); }
+.nota-rot { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; max-width: 100%; border: 0; border-radius: 999px; padding: 4px 11px; background: var(--accent-soft); color: var(--ink); font-size: 12.5px; font-weight: 600; cursor: pointer; text-align: left; overflow-wrap: anywhere; }
+.nota-rot:hover { filter: brightness(.96); }
+.nota-rot svg { flex: none; }
+.nota-rot.solta { background: transparent; border: 1px dashed var(--line); color: var(--muted); font-weight: 500; cursor: default; }
+.nota-txt { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15.5px; line-height: 1.6; }
+.nota-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.nota-acts { display: flex; gap: 6px; margin-left: auto; }
+.rnotas { margin-top: 32px; padding-top: 18px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 12px; max-width: 64ch; }
+.rnotas h3 { margin: 0; font-size: 17px; font-weight: 700; display: flex; align-items: baseline; gap: 8px; }
+.rnotas h3 small { font-size: 12px; font-weight: 500; color: var(--muted); }
+.rnotas .notas:empty { display: none; }
+:root[data-contraste="alto"] .nota, :root[data-contraste="alto"] .notaform textarea { border-width: 2px; }
+.notaform-foot > .btn { margin-left: auto; }

@@ -306,6 +306,43 @@ switch ($action) {
         $rows = db()->query('SELECT * FROM roteiros ORDER BY id')->fetchAll();
         out(['roteiros' => array_map('roteiro_out', $rows), 'favoritos' => favoritos_de($eu['id'])]);
 
+    case 'anotacoes':
+        $eu = require_user();
+        out(['anotacoes' => anotacoes_de($eu['id'])]);
+
+    case 'anotacao_salvar':
+        require_post();
+        $eu = require_user();
+        ensure_anotacoes();
+        $id = int_in('id');
+        $texto = text_cut(trim(str_replace(chr(13), '', raw_in('texto'))), 5000);
+        if ($texto === '') fail('Escreva alguma coisa antes de salvar.', 422);
+        if ($id) {
+            // Só altera se a anotação for da própria pessoa
+            $st = db()->prepare('UPDATE anotacoes SET texto = ?, atualizado_em = NOW() WHERE id = ? AND usuario_id = ?');
+            $st->execute([$texto, $id, $eu['id']]);
+            if (!$st->rowCount()) {
+                $st = db()->prepare('SELECT COUNT(*) FROM anotacoes WHERE id = ? AND usuario_id = ?');
+                $st->execute([$id, $eu['id']]);
+                if (!(int) $st->fetchColumn()) fail('Esta anotação não existe mais.', 404);
+            }
+        } else {
+            $rid = int_in('roteiro_id') ?: null;
+            if ($rid && !find_roteiro($rid)) fail('Este roteiro não existe mais.', 404);
+            $st = db()->prepare('SELECT COUNT(*) FROM anotacoes WHERE usuario_id = ?');
+            $st->execute([$eu['id']]);
+            if ((int) $st->fetchColumn() >= 2000) fail('Você chegou ao limite de 2000 anotações. Apague algumas para criar novas.', 422);
+            db()->prepare('INSERT INTO anotacoes (usuario_id, roteiro_id, texto) VALUES (?, ?, ?)')->execute([$eu['id'], $rid, $texto]);
+        }
+        out(['anotacoes' => anotacoes_de($eu['id'])]);
+
+    case 'anotacao_excluir':
+        require_post();
+        $eu = require_user();
+        ensure_anotacoes();
+        db()->prepare('DELETE FROM anotacoes WHERE id = ? AND usuario_id = ?')->execute([int_in('id'), $eu['id']]);
+        out(['anotacoes' => anotacoes_de($eu['id'])]);
+
     case 'favoritar':
         // Qualquer pessoa logada pode marcar ou desmarcar a estrela de um roteiro
         require_post();
@@ -386,6 +423,9 @@ switch ($action) {
             db()->prepare('DELETE FROM roteiros WHERE id = ?')->execute([$r['id']]);
             ensure_favoritos();
             db()->prepare('DELETE FROM favoritos WHERE roteiro_id = ?')->execute([$r['id']]);
+            // As anotações das pessoas não se perdem: viram anotações soltas
+            ensure_anotacoes();
+            db()->prepare('UPDATE anotacoes SET roteiro_id = NULL WHERE roteiro_id = ?')->execute([$r['id']]);
             delete_pdf_file($r['pdf_arquivo']);
             delete_audio_for('r' . (int) $r['id']);
         }
@@ -466,6 +506,8 @@ switch ($action) {
         db()->prepare('DELETE FROM usuarios WHERE id = ?')->execute([$id]);
         ensure_favoritos();
         db()->prepare('DELETE FROM favoritos WHERE usuario_id = ?')->execute([$id]);
+        ensure_anotacoes();
+        db()->prepare('DELETE FROM anotacoes WHERE usuario_id = ?')->execute([$id]);
         out(['ok' => true]);
 
     case 'convites':

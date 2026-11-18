@@ -174,6 +174,29 @@ function favoritos_de(int $uid): array
     return array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
 }
 
+function ensure_anotacoes(): void
+{
+    static $ok = false;
+    if ($ok) return;
+    if (!db()->query("SHOW TABLES LIKE 'anotacoes'")->fetch()) create_tables();
+    $ok = true;
+}
+
+// Só as anotações da própria pessoa: o filtro por usuario_id está em todas as consultas
+function anotacoes_de(int $uid): array
+{
+    ensure_anotacoes();
+    $st = db()->prepare('SELECT id, roteiro_id, texto, criado_em, atualizado_em FROM anotacoes WHERE usuario_id = ? ORDER BY atualizado_em DESC, id DESC');
+    $st->execute([$uid]);
+    return array_map(fn($n) => [
+        'id' => (int) $n['id'],
+        'roteiro_id' => $n['roteiro_id'] !== null ? (int) $n['roteiro_id'] : null,
+        'texto' => $n['texto'],
+        'criado_em' => iso_date($n['criado_em']),
+        'atualizado_em' => iso_date($n['atualizado_em']),
+    ], $st->fetchAll());
+}
+
 function find_convite(string $token, bool $lock = false): ?array
 {
     if (!preg_match('/^[a-f0-9]{64}$/', $token)) return null;
